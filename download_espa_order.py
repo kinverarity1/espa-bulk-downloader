@@ -9,52 +9,66 @@ Purpose: A simple python client that will download all available (completed) sce
 Requires: Python feedparser and standard Python installation.     
 
 Version: 1.0
-
-================================
-
-Revised on 30 June 2016 to work with Python 3.x
-
 """
+
 import sys
 import feedparser
-
-import argparse
-import shutil
-import os
 if sys.version_info[0] !=3:
     import urllib2 as ul
 else:
     import urllib.request as ul
+import argparse
+import shutil
+import os
+import time
+import random
+import base64
+
 
 class SceneFeed(object):
     """SceneFeed parses the ESPA RSS Feed for the named email address and generates
     the list of Scenes that are available"""
     
-    def __init__(self, email, host="http://espa.cr.usgs.gov"):
+    def __init__(self, email, username, password, host="http://espa.cr.usgs.gov"):
         """Construct a SceneFeed.
         
         Keyword arguments:
         email -- Email address orders were placed with
         host  -- http url of the RSS feed host
         """
-        
-        self.email = email
-        
-        if not host.startswith('http://'):
-            host = ''.join(["http://", host])
+        if not host:
+            host = "http://espa.cr.usgs.gov"
+
         self.host = host
-        
+        self.email = email
+        self.user = username
+        self.passw = password
+
         self.feed_url = "%s/ordering/status/%s/rss/" % (self.host, self.email)
-        
-        
+
     def get_items(self, orderid='ALL'):
         """get_items generates Scene objects for all scenes that are available to be
         downloaded.  Supply an orderid to look for a particular order, otherwise all
         orders for self.email will be returned"""
         
         #yield Scenes with download urls
-        feed = feedparser.parse(self.feed_url)
-                
+
+        auth_str = "%s:%s" % (self.user, self.passw)
+        if sys.version_info[0] !=3:
+            bauth = base64.b64encode(auth_str)
+        else:
+            bauth = base64.b64encode(auth_str.encode())
+
+        feed = feedparser.parse(self.feed_url, request_headers={"Authorization": bauth})
+
+        if feed.status == 403:
+            print("user authentication failed")
+            exit()
+
+        if feed.status == 404:
+            print("there was a problem retrieving your order. verify your orderid is correct")
+            exit()
+
         for entry in feed.entries:
 
             #description field looks like this
@@ -85,7 +99,7 @@ class LocalStorage(object):
     
     def __init__(self, basedir):
         self.basedir = basedir
-                    
+
     def directory_path(self, scene):
         return ''.join([self.basedir, os.sep, scene.orderid, os.sep])
         
@@ -100,7 +114,8 @@ class LocalStorage(object):
     
     def store(self, scene):
         
-        if self.is_stored(scene): return
+        if self.is_stored(scene):
+            return
                     
         download_directory = self.directory_path(scene)
         
@@ -109,14 +124,34 @@ class LocalStorage(object):
             os.makedirs(download_directory)
             print ("Created target_directory:%s" % download_directory)
         
-        req = ul.urlopen(scene.srcurl)
+        req = ul.Request(scene.srcurl)
+        req.get_method = lambda: 'HEAD'
 
-        print ("Copying %s to %s" % (scene.name, download_directory))
-        
-        with open(self.tmp_scene_path(scene), 'wb') as target_handle:
-            shutil.copyfileobj(req, target_handle)
-        
+        head = ul.urlopen(req)
+        file_size = int(head.headers['Content-Length'])
+
+        if os.path.exists(self.tmp_scene_path(scene)):
+            first_byte = os.path.getsize(self.tmp_scene_path(scene))
+        else:
+            first_byte = 0
+
+        print ("Downloading %s to %s" % (scene.name, download_directory))
+
+        while first_byte < file_size:
+            first_byte = self._download(first_byte)
+            time.sleep(random.randint(5, 30))
+
         os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
+
+    def _download(self, first_byte):
+        req = ul.Request(scene.srcurl)
+        req.headers['Range'] = 'bytes={}-'.format(first_byte)
+
+        with open(self.tmp_scene_path(scene), 'ab') as target:
+            source = ul.urlopen(req)
+            shutil.copyfileobj(source, target)
+
+        return os.path.getsize(self.tmp_scene_path(scene))
 
 
 if __name__ == '__main__':
@@ -153,11 +188,28 @@ if __name__ == '__main__':
                         
     parser.add_argument("-d", "--target_directory",
                         required=True,
-                        help="where to store the downloaded scenes")   
-    
+                        help="where to store the downloaded scenes")
+
+    parser.add_argument("-u", "--username",
+                        required=True,
+                        help="EE/ESPA account username")
+
+    parser.add_argument("-p", "--password",
+                        required=True,
+                        help="EE/ESPA account password")
+
+    parser.add_argument("-v", "--verbose",
+                        required=False,
+                        help="be vocal about process")
+
+    parser.add_argument("-i", "--host",
+                        required=False)
+
+
     args = parser.parse_args()
     
     storage = LocalStorage(args.target_directory)
     
-    for scene in SceneFeed(args.email).get_items(args.order):
+    print('Retrieving Feed')
+    for scene in SceneFeed(args.email, args.username, args.password, args.host).get_items(args.order):
         storage.store(scene)
