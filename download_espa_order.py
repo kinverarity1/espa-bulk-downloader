@@ -9,13 +9,22 @@ Purpose: A simple python client that will download all available (completed) sce
 Requires: Python feedparser and standard Python installation.     
 
 Version: 1.0
-"""
 
+================================
+
+Revised on 30 June 2016 to work with Python 3.x
+
+"""
+import sys
 import feedparser
-import urllib2
+
 import argparse
 import shutil
 import os
+if sys.version_info[0] !=3:
+    import urllib2 as ul
+else:
+    import urllib.request as ul
 
 class SceneFeed(object):
     """SceneFeed parses the ESPA RSS Feed for the named email address and generates
@@ -100,7 +109,7 @@ class LocalStorage(object):
             os.makedirs(download_directory)
             print ("Created target_directory:%s" % download_directory)
         
-        req = urllib2.urlopen(scene.srcurl)
+        req = ul.urlopen(scene.srcurl)
 
         print ("Copying %s to %s" % (scene.name, download_directory))
         
