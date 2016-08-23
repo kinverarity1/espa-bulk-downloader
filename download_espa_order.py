@@ -9,6 +9,11 @@ Purpose: A simple python client that will download all available (completed) sce
 Requires: Python feedparser and standard Python installation.     
 
 Version: 1.0
+
+Changes: 
+
+30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
+
 """
 
 import sys
@@ -17,12 +22,25 @@ if sys.version_info[0] !=3:
     import urllib2 as ul
 else:
     import urllib.request as ul
+#    import urllib.error
 import argparse
 import shutil
 import os
 import time
 import random
 import base64
+
+def drawProgressBar(percent,pixnum,numpixels, barLen = 40):
+    # This function was adapted from Jacob Tsui's answer on http://stackoverflow.com/questions/3002085/python-to-print-out-status-bar-and-percentage
+    sys.stdout.write("\r")
+    progress = ""
+    for i in range(barLen):
+        if i < int(barLen * percent):
+            progress += "="
+        else:
+            progress += " "
+    sys.stdout.write("[ %s ] %.2f%% (%d/%d)" % (progress, percent * 100,pixnum,numpixels))
+    sys.stdout.flush()
 
 
 class SceneFeed(object):
@@ -115,6 +133,7 @@ class LocalStorage(object):
     def store(self, scene):
         
         if self.is_stored(scene):
+            print('Scene already exists on disk, skipping.')
             return
                     
         download_directory = self.directory_path(scene)
@@ -138,20 +157,28 @@ class LocalStorage(object):
         print ("Downloading %s to %s" % (scene.name, download_directory))
 
         while first_byte < file_size:
-            first_byte = self._download(first_byte)
-            time.sleep(random.randint(5, 30))
-
-        os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
+            try:
+                first_byte = self._download(first_byte)
+#                drawProgressBar((float(first_byte)/float(file_size)),first_byte,file_size)
+                time.sleep(random.randint(5, 30))
+            except Exception as e:
+                print(str(e))
+                break
+        if first_byte >= file_size:
+            os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
 
     def _download(self, first_byte):
-        req = ul.Request(scene.srcurl)
-        req.headers['Range'] = 'bytes={}-'.format(first_byte)
-
-        with open(self.tmp_scene_path(scene), 'ab') as target:
-            source = ul.urlopen(req)
-            shutil.copyfileobj(source, target)
-
-        return os.path.getsize(self.tmp_scene_path(scene))
+#        try:
+            req = ul.Request(scene.srcurl)
+            req.headers['Range'] = 'bytes={}-'.format(first_byte)
+    
+            with open(self.tmp_scene_path(scene), 'ab') as target:
+                source = ul.urlopen(req)
+                shutil.copyfileobj(source, target)
+    
+            return os.path.getsize(self.tmp_scene_path(scene))
+#        except Exception as e:
+#            print(str(e))
 
 
 if __name__ == '__main__':
@@ -211,5 +238,8 @@ if __name__ == '__main__':
     storage = LocalStorage(args.target_directory)
     
     print('Retrieving Feed')
-    for scene in SceneFeed(args.email, args.username, args.password, args.host).get_items(args.order):
+    sf = SceneFeed(args.email, args.username, args.password, args.host).get_items(args.order)
+    for scene in sf:
+        print('\nNow processing scene %s.'%(scene.name))
         storage.store(scene)
+        
