@@ -13,6 +13,11 @@ Version: 1.0
 Changes: 
 
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
+24 August 2016: Guy Serbin added:
+1. The downloads will now tell you which file number of all available scenes is being downloaded.
+2. Added a try/except clause for cases where the remote server closes the connection during a download.
+3. Increased a delay range from 5-30 seconds to 1-60 seconds during downloads.
+4. The progress bar has not been implemented as it only pops up at the end of a file download. However, the function is still in place.
 
 """
 
@@ -30,8 +35,10 @@ import time
 import random
 import base64
 
-def drawProgressBar(percent,pixnum,numpixels, barLen = 40):
+def drawProgressBar(first_byte, file_size, barLen = 40):
     # This function was adapted from Jacob Tsui's answer on http://stackoverflow.com/questions/3002085/python-to-print-out-status-bar-and-percentage
+    # I have no idea how to get this to draw with download progression- it only appears after the download has completed.
+    percent = float(first_byte)/ float(file_size)   
     sys.stdout.write("\r")
     progress = ""
     for i in range(barLen):
@@ -39,7 +46,7 @@ def drawProgressBar(percent,pixnum,numpixels, barLen = 40):
             progress += "="
         else:
             progress += " "
-    sys.stdout.write("[ %s ] %.2f%% (%d/%d)" % (progress, percent * 100,pixnum,numpixels))
+    sys.stdout.write("[ %s ] %.2f%% (%d/%d)" % (progress, percent * 100, first_byte, file_size))
     sys.stdout.flush()
 
 
@@ -78,7 +85,9 @@ class SceneFeed(object):
             bauth = base64.b64encode(auth_str.encode())
 
         feed = feedparser.parse(self.feed_url, request_headers={"Authorization": bauth})
-
+        numfiles=len(feed.entries)
+        print('There are a total of %d files available for download.'%numfiles)
+        
         if feed.status == 403:
             print("user authentication failed")
             exit()
@@ -86,7 +95,8 @@ class SceneFeed(object):
         if feed.status == 404:
             print("there was a problem retrieving your order. verify your orderid is correct")
             exit()
-
+            
+        filenum = 1
         for entry in feed.entries:
 
             #description field looks like this
@@ -95,12 +105,14 @@ class SceneFeed(object):
 
             #only return values if they are in the requested order            
             if orderid == "ALL" or scene_order == orderid:
-                yield Scene(entry.link, scene_order)
+                yield Scene(entry.link, scene_order, filenum, numfiles)
+            
+            filenum += 1
             
                 
 class Scene(object):
     
-    def __init__(self, srcurl, orderid):
+    def __init__(self, srcurl, orderid, filenum, numfiles):
     
         self.srcurl = srcurl
     
@@ -111,6 +123,10 @@ class Scene(object):
         self.filename = parts[len(parts) - 1]
         
         self.name = self.filename.split('.tar.gz')[0]
+        
+        self.filenum = filenum
+        
+        self.numfiles = numfiles
         
                   
 class LocalStorage(object):
@@ -154,13 +170,13 @@ class LocalStorage(object):
         else:
             first_byte = 0
 
-        print ("Downloading %s to %s" % (scene.name, download_directory))
+        print ("Downloading %s, file number %d of %d, to: %s" % (scene.name, scene.filenum, scene.numfiles, download_directory))
 
         while first_byte < file_size:
-            try:
+            try: # Added this to keep the script from crashing if the remote host closes the connection. Instead, it moves on to the next file.
                 first_byte = self._download(first_byte)
-#                drawProgressBar((float(first_byte)/float(file_size)),first_byte,file_size)
-                time.sleep(random.randint(5, 30))
+#                drawProgressBar(first_byte, file_size)
+                time.sleep(random.randint(1, 60)) # Expanded the range of this, hopefully to reduce the amount of timeouts that may occur with downloading. Not sure if it will have any real effect.
             except Exception as e:
                 print(str(e))
                 break
