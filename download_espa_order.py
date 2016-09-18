@@ -35,7 +35,7 @@ else:
 
 
 class Api(object):
-    def __init__(self, username, password, host='http://espa.cr.usgs.gov'):
+    def __init__(self, username, password, host):
         self.host = host
         self.username = username
         self.password = password
@@ -72,7 +72,7 @@ class Api(object):
         resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
 
         if "msg" in resp:
-            return resp["msg"]
+            raise Exception(resp)
 
         return [_ for _ in resp['orderid'][orderid].get('product_dload_url')]
 
@@ -83,7 +83,11 @@ class Api(object):
 
         # Need to sift through and only pull non-purged orders
         for o in all_orders:
-            if self.api_request('/api/v1/order-status/{0}'.format(o))['status'] != 'purged':
+            resp = self.api_request('/api/v1/order-status/{0}'.format(o))['status'] != 'purged'
+
+            if 'msg' in resp:
+                raise Exception(resp)
+            elif 'status' in resp and resp['status'] != 'purged':
                 ret.append(o)
 
         return ret
@@ -111,8 +115,9 @@ class Scene(object):
                   
 class LocalStorage(object):
     
-    def __init__(self, basedir):
+    def __init__(self, basedir, verbose=False):
         self.basedir = basedir
+        self.verbose = verbose
 
     def directory_path(self, scene):
         return ''.join([self.basedir, os.sep, scene.orderid, os.sep])
@@ -129,7 +134,9 @@ class LocalStorage(object):
     def store(self, scene):
         
         if self.is_stored(scene):
-            print('Scene already exists on disk, skipping.')
+            if self.verbose:
+                print('Scene already exists on disk, skipping.')
+
             return
                     
         download_directory = self.directory_path(scene)
@@ -137,7 +144,9 @@ class LocalStorage(object):
         # make sure we have a target to land the scenes
         if not os.path.exists(download_directory):
             os.makedirs(download_directory)
-            print ("Created target_directory: %s " % download_directory)
+
+            if self.verbose:
+                print ("Created target_directory: %s " % download_directory)
 
         req = ul.Request(scene.srcurl)
         req.get_method = lambda: 'HEAD'
@@ -149,14 +158,15 @@ class LocalStorage(object):
         if os.path.exists(self.tmp_scene_path(scene)):
             first_byte = os.path.getsize(self.tmp_scene_path(scene))
 
-        print ("Downloading %s, file number %d of %d, to: %s" % (scene.name, scene.filenum,
-                                                                 scene.numfiles, download_directory))
+        if self.verbose:
+            print ("Downloading %s, file number %d of %d, to: %s" % (scene.name, scene.filenum,
+                                                                     scene.numfiles, download_directory))
 
         while first_byte < file_size:
             # Added try/except to keep the script from crashing if the remote host closes the connection.
             # Instead, it moves on to the next file.
             try:
-                first_byte = self._download(first_byte)
+                first_byte = self._download(first_byte, scene)
                 time.sleep(random.randint(5, 30))
             except Exception as e:
                 print(str(e))
@@ -164,7 +174,7 @@ class LocalStorage(object):
         if first_byte >= file_size:
             os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
 
-    def _download(self, first_byte):
+    def _download(self, first_byte, scene):
         req = ul.Request(scene.srcurl)
         req.headers['Range'] = 'bytes={}-'.format(first_byte)
 
@@ -173,6 +183,30 @@ class LocalStorage(object):
             shutil.copyfileobj(source, target)
 
         return os.path.getsize(self.tmp_scene_path(scene))
+
+
+def main(username, email, order, target_directory, password=None, host=None, verbose=False):
+    if not password:
+        password = getpass('Password: ')
+    if not host:
+        host = 'https://espa.cr.usgs.gov'
+
+    storage = LocalStorage(target_directory)
+
+    with Api(username, password, host) as api:
+        if order == 'ALL':
+            orders = api.retrieve_all_orders(email)
+        else:
+            orders = [order]
+
+        if verbose:
+            print('Retrieving orders: {0}'.format(orders))
+
+        for o in orders:
+            scenes = api.get_completed_scenes(o)
+
+            for s in scenes:
+                storage.store(s)
 
 
 if __name__ == '__main__':
@@ -225,21 +259,6 @@ if __name__ == '__main__':
     parser.add_argument("-i", "--host",
                         required=False)
 
-    args = parser.parse_args()
+    parsed_args = parser.parse_args()
 
-    if not args.username:
-        args.username = getpass('Password: ')
-    
-    storage = LocalStorage(args.target_directory)
-
-    with Api(args.username, args.password, args.host) as api:
-        if args.order == 'ALL':
-            orders = api.retrieve_all_orders(args.email)
-        else:
-            orders = list(args.order)
-
-        for o in orders:
-            scenes = api.get_completed_scenes(o)
-
-            for s in scenes:
-                storage.store(s)
+    main(**vars(parsed_args))
