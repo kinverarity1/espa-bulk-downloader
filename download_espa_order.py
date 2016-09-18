@@ -215,7 +215,7 @@ if __name__ == '__main__':
                         help="EE/ESPA account username")
 
     parser.add_argument("-p", "--password",
-                        required=True,
+                        required=False,
                         help="EE/ESPA account password")
 
     parser.add_argument("-v", "--verbose",
@@ -226,6 +226,9 @@ if __name__ == '__main__':
                         required=False)
 
     args = parser.parse_args()
+
+    if not args.username:
+        args.username = getpass('Password: ')
     
     storage = LocalStorage(args.target_directory)
 
