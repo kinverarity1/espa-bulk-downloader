@@ -74,7 +74,7 @@ class Api(object):
         if "msg" in resp:
             raise Exception(resp)
 
-        return [_ for _ in resp['orderid'][orderid].get('product_dload_url')]
+        return [_.get('product_dload_url') for _ in resp['orderid'][orderid] if _.get('product_dload_url')]
 
     def retrieve_all_orders(self, email):
         ret = []
@@ -83,7 +83,7 @@ class Api(object):
 
         # Need to sift through and only pull non-purged orders
         for o in all_orders:
-            resp = self.api_request('/api/v1/order-status/{0}'.format(o))['status'] != 'purged'
+            resp = self.api_request('/api/v1/order-status/{0}'.format(o))
 
             if 'msg' in resp:
                 raise Exception(resp)
@@ -101,17 +101,15 @@ class Api(object):
                 
 class Scene(object):
     
-    def __init__(self, srcurl, orderid, filenum, numfiles):
+    def __init__(self, srcurl):
         self.srcurl = srcurl
-        self.orderid = orderid
-        
+
         parts = self.srcurl.split("/")
-        self.filename = parts[len(parts) - 1]
+        self.orderid = parts[4]
+        self.filename = parts[-1]
         
         self.name = self.filename.split('.tar.gz')[0]
-        self.filenum = filenum
-        self.numfiles = numfiles
-        
+
                   
 class LocalStorage(object):
     
@@ -159,8 +157,7 @@ class LocalStorage(object):
             first_byte = os.path.getsize(self.tmp_scene_path(scene))
 
         if self.verbose:
-            print ("Downloading %s, file number %d of %d, to: %s" % (scene.name, scene.filenum,
-                                                                     scene.numfiles, download_directory))
+            print ("Downloading %s, to: %s" % (scene.name, download_directory))
 
         while first_byte < file_size:
             # Added try/except to keep the script from crashing if the remote host closes the connection.
@@ -191,7 +188,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
     if not host:
         host = 'https://espa.cr.usgs.gov'
 
-    storage = LocalStorage(target_directory)
+    storage = LocalStorage(target_directory, verbose=verbose)
 
     with Api(username, password, host) as api:
         if order == 'ALL':
@@ -205,8 +202,12 @@ def main(username, email, order, target_directory, password=None, host=None, ver
         for o in orders:
             scenes = api.get_completed_scenes(o)
 
-            for s in scenes:
-                storage.store(s)
+            for s in range(len(scenes)):
+                if verbose:
+                    print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
+
+                scene = Scene(scenes[s])
+                storage.store(scene)
 
 
 if __name__ == '__main__':
@@ -254,6 +255,7 @@ if __name__ == '__main__':
 
     parser.add_argument("-v", "--verbose",
                         required=False,
+                        action='store_true',
                         help="be vocal about process")
 
     parser.add_argument("-i", "--host",
