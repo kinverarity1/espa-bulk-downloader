@@ -20,74 +20,79 @@ Changes:
 """
 import argparse
 import base64
-import feedparser
 import os
 import random
 import shutil
 import sys
 import time
+import json
+from getpass import getpass
 
-is_py3 = True if sys.version_info[0] == 3 else False
-
-if is_py3:
+if sys.version_info[0] == 3:
     import urllib.request as ul
 else:
     import urllib2 as ul
 
 
-class SceneFeed(object):
-    """SceneFeed parses the ESPA RSS Feed for the named email address and generates
-    the list of Scenes that are available"""
-    
-    def __init__(self, email, username, password, host="http://espa.cr.usgs.gov"):
-        """Construct a SceneFeed.
-        
-        Keyword arguments:
-        email -- Email address orders were placed with
-        host  -- http url of the RSS feed host
-        """
-        if not host:
-            host = "http://espa.cr.usgs.gov"
-
+class Api(object):
+    def __init__(self, username, password, host='http://espa.cr.usgs.gov'):
         self.host = host
-        self.email = email
-        self.user = username
-        self.passw = password
+        self.username = username
+        self.password = password
 
-        self.feed_url = "%s/ordering/status/%s/rss/" % (self.host, self.email)
+    def api_request(self, endpoint, data=None):
+        """
+        Simple method to handle calls to a REST API that uses JSON
 
-    def get_items(self, orderid='ALL'):
-        """get_items generates Scene objects for all scenes that are available to be
-        downloaded.  Supply an orderid to look for a particular order, otherwise all
-        orders for self.email will be returned"""
+        args:
+            endpoint - API endpoint URL
+            data - Python dictionary to send as JSON to the API
 
-        auth_str = "%s:%s" % (self.user, self.passw)
-        if is_py3:
-            auth_str = auth_str.encode()
+        returns:
+            Python dictionary representation of the API response
+        """
+        if data:
+            data = json.dumps(data)
 
-        feed = feedparser.parse(self.feed_url, request_headers={"Authorization": base64.b64encode(auth_str)})
+        request = ul.Request(self.host + endpoint, data=data)
 
-        num_downloads = len(feed.entries)
-        if orderid != 'ALL':
-            num_downloads = len([i for i in feed.entries if orderid in i['id']])
-        print('There are a total of %d files available for download.' % num_downloads)
+        base64string = (base64
+                        .encodestring('%s:%s' % (self.username, self.password))
+                        .replace('\n', ''))
+        request.add_header("Authorization", "Basic %s" % base64string)
 
-        if feed.status == 403:
-            print("user authentication failed")
-            exit()
+        try:
+            result = ul.urlopen(request)
+        except ul.HTTPError as e:
+            result = e
 
-        if feed.status == 404:
-            print("there was a problem retrieving your order. verify your orderid is correct")
-            exit()
+        return json.loads(result.read())
 
-        for index, entry in enumerate(feed.entries):
-            # description field looks like this
-            # 'scene_status:thestatus,orderid:theid,orderdate:thedate'
-            scene_order = entry.description.split(',')[1].split(':')[1]
+    def get_completed_scenes(self, orderid):
+        resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
 
-            # only return values if they are in the requested order
-            if orderid == "ALL" or scene_order == orderid:
-                yield Scene(entry.link, scene_order, index+1, num_downloads)
+        if "msg" in resp:
+            return resp["msg"]
+
+        return [_ for _ in resp['orderid'][orderid].get('product_dload_url')]
+
+    def retrieve_all_orders(self, email):
+        ret = []
+
+        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email))['orders']
+
+        # Need to sift through and only pull non-purged orders
+        for o in all_orders:
+            if self.api_request('/api/v1/order-status/{0}'.format(o))['status'] != 'purged':
+                ret.append(o)
+
+        return ret
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
 
                 
 class Scene(object):
@@ -224,8 +229,14 @@ if __name__ == '__main__':
     
     storage = LocalStorage(args.target_directory)
 
-    print 'Retrieving Feed'
-    for scene in SceneFeed(args.email, args.username, args.password, args.host).get_items(args.order):
-        print('\nNow processing scene %s.' % scene.name)
-        storage.store(scene)
+    with Api(args.username, args.password, args.host) as api:
+        if args.order == 'ALL':
+            orders = api.retrieve_all_orders(args.email)
+        else:
+            orders = list(args.order)
 
+        for o in orders:
+            scenes = api.get_completed_scenes(o)
+
+            for s in scenes:
+                storage.store(s)
