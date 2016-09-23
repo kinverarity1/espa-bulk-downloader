@@ -16,98 +16,107 @@ Changes:
 24 August 2016: Guy Serbin added:
 1. The downloads will now tell you which file number of all available scenes is being downloaded.
 2. Added a try/except clause for cases where the remote server closes the connection during a download.
+23 September 2016: Converted to using the ESPA API proper rather than relying on the RSS feed
 
 """
 import argparse
 import base64
-import feedparser
 import os
 import random
 import shutil
 import sys
 import time
+import json
+from getpass import getpass
 
-is_py3 = True if sys.version_info[0] == 3 else False
-
-if is_py3:
+if sys.version_info[0] == 3:
     import urllib.request as ul
 else:
     import urllib2 as ul
 
 
-class SceneFeed(object):
-    """SceneFeed parses the ESPA RSS Feed for the named email address and generates
-    the list of Scenes that are available"""
-    
-    def __init__(self, email, username, password, host="http://espa.cr.usgs.gov"):
-        """Construct a SceneFeed.
-        
-        Keyword arguments:
-        email -- Email address orders were placed with
-        host  -- http url of the RSS feed host
-        """
-        if not host:
-            host = "http://espa.cr.usgs.gov"
-
+class Api(object):
+    def __init__(self, username, password, host):
         self.host = host
-        self.email = email
-        self.user = username
-        self.passw = password
+        self.username = username
+        self.password = password
 
-        self.feed_url = "%s/ordering/status/%s/rss/" % (self.host, self.email)
+    def api_request(self, endpoint, data=None):
+        """
+        Simple method to handle calls to a REST API that uses JSON
 
-    def get_items(self, orderid='ALL'):
-        """get_items generates Scene objects for all scenes that are available to be
-        downloaded.  Supply an orderid to look for a particular order, otherwise all
-        orders for self.email will be returned"""
+        args:
+            endpoint - API endpoint URL
+            data - Python dictionary to send as JSON to the API
 
-        auth_str = "%s:%s" % (self.user, self.passw)
-        if is_py3:
-            auth_str = auth_str.encode()
+        returns:
+            Python dictionary representation of the API response
+        """
+        if data:
+            data = json.dumps(data)
 
-        feed = feedparser.parse(self.feed_url, request_headers={"Authorization": base64.b64encode(auth_str)})
+        request = ul.Request(self.host + endpoint, data=data)
 
-        num_downloads = len(feed.entries)
-        if orderid != 'ALL':
-            num_downloads = len([i for i in feed.entries if orderid in i['id']])
-        print('There are a total of %d files available for download.' % num_downloads)
+        base64string = (base64
+                        .encodestring('%s:%s' % (self.username, self.password))
+                        .replace('\n', ''))
+        request.add_header("Authorization", "Basic %s" % base64string)
 
-        if feed.status == 403:
-            print("user authentication failed")
-            exit()
+        try:
+            result = ul.urlopen(request)
+        except ul.HTTPError as e:
+            result = e
 
-        if feed.status == 404:
-            print("there was a problem retrieving your order. verify your orderid is correct")
-            exit()
+        return json.loads(result.read())
 
-        for index, entry in enumerate(feed.entries):
-            # description field looks like this
-            # 'scene_status:thestatus,orderid:theid,orderdate:thedate'
-            scene_order = entry.description.split(',')[1].split(':')[1]
+    def get_completed_scenes(self, orderid):
+        resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
 
-            # only return values if they are in the requested order
-            if orderid == "ALL" or scene_order == orderid:
-                yield Scene(entry.link, scene_order, index+1, num_downloads)
+        if "msg" in resp:
+            raise Exception(resp)
+
+        return [_.get('product_dload_url') for _ in resp['orderid'][orderid] if _.get('product_dload_url')]
+
+    def retrieve_all_orders(self, email):
+        ret = []
+
+        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email))['orders']
+
+        # Need to sift through and only pull non-purged orders
+        for o in all_orders:
+            resp = self.api_request('/api/v1/order-status/{0}'.format(o))
+
+            if 'msg' in resp:
+                raise Exception(resp)
+            elif 'status' in resp and resp['status'] != 'purged':
+                ret.append(o)
+
+        return ret
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
 
                 
 class Scene(object):
     
-    def __init__(self, srcurl, orderid, filenum, numfiles):
+    def __init__(self, srcurl):
         self.srcurl = srcurl
-        self.orderid = orderid
-        
+
         parts = self.srcurl.split("/")
-        self.filename = parts[len(parts) - 1]
+        self.orderid = parts[4]
+        self.filename = parts[-1]
         
         self.name = self.filename.split('.tar.gz')[0]
-        self.filenum = filenum
-        self.numfiles = numfiles
-        
+
                   
 class LocalStorage(object):
     
-    def __init__(self, basedir):
+    def __init__(self, basedir, verbose=False):
         self.basedir = basedir
+        self.verbose = verbose
 
     def directory_path(self, scene):
         return ''.join([self.basedir, os.sep, scene.orderid, os.sep])
@@ -124,7 +133,9 @@ class LocalStorage(object):
     def store(self, scene):
         
         if self.is_stored(scene):
-            print('Scene already exists on disk, skipping.')
+            if self.verbose:
+                print('Scene already exists on disk, skipping.')
+
             return
                     
         download_directory = self.directory_path(scene)
@@ -132,7 +143,9 @@ class LocalStorage(object):
         # make sure we have a target to land the scenes
         if not os.path.exists(download_directory):
             os.makedirs(download_directory)
-            print ("Created target_directory: %s " % download_directory)
+
+            if self.verbose:
+                print ("Created target_directory: %s " % download_directory)
 
         req = ul.Request(scene.srcurl)
         req.get_method = lambda: 'HEAD'
@@ -144,22 +157,23 @@ class LocalStorage(object):
         if os.path.exists(self.tmp_scene_path(scene)):
             first_byte = os.path.getsize(self.tmp_scene_path(scene))
 
-        print ("Downloading %s, file number %d of %d, to: %s" % (scene.name, scene.filenum,
-                                                                 scene.numfiles, download_directory))
+        if self.verbose:
+            print ("Downloading %s, to: %s" % (scene.name, download_directory))
 
         while first_byte < file_size:
             # Added try/except to keep the script from crashing if the remote host closes the connection.
             # Instead, it moves on to the next file.
             try:
-                first_byte = self._download(first_byte)
+                first_byte = self._download(first_byte, scene)
                 time.sleep(random.randint(5, 30))
             except Exception as e:
                 print(str(e))
                 break
+
         if first_byte >= file_size:
             os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
 
-    def _download(self, first_byte):
+    def _download(self, first_byte, scene):
         req = ul.Request(scene.srcurl)
         req.headers['Range'] = 'bytes={}-'.format(first_byte)
 
@@ -170,28 +184,54 @@ class LocalStorage(object):
         return os.path.getsize(self.tmp_scene_path(scene))
 
 
+def main(username, email, order, target_directory, password=None, host=None, verbose=False):
+    if not password:
+        password = getpass('Password: ')
+    if not host:
+        host = 'https://espa.cr.usgs.gov'
+
+    storage = LocalStorage(target_directory, verbose=verbose)
+
+    with Api(username, password, host) as api:
+        if order == 'ALL':
+            orders = api.retrieve_all_orders(email)
+        else:
+            orders = [order]
+
+        if verbose:
+            print('Retrieving orders: {0}'.format(orders))
+
+        for o in orders:
+            scenes = api.get_completed_scenes(o)
+
+            for s in range(len(scenes)):
+                print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
+
+                scene = Scene(scenes[s])
+                storage.store(scene)
+
+
 if __name__ == '__main__':
-    e_parts = list('ESPA Bulk Download Client Version 1.0.0. [Tested with Python 2.7]\n')
-    e_parts.append('Retrieves all completed scenes for the user/order\n')
-    e_parts.append('and places them into the target directory.\n')
-    e_parts.append('Scenes are organized by order.\n\n')
-    e_parts.append('It is safe to cancel and restart the client, as it will\n')
-    e_parts.append('only download scenes one time (per directory)\n')
-    e_parts.append(' \n')
-    e_parts.append('*** Important ***\n')
-    e_parts.append('If you intend to automate execution of this script,\n')
-    e_parts.append('please take care to ensure only 1 instance runs at a time.\n')
-    e_parts.append('Also please do not schedule execution more frequently than\n')
-    e_parts.append('once per hour.\n')
-    e_parts.append(' \n')
-    e_parts.append('------------\n')
-    e_parts.append('Examples:\n')
-    e_parts.append('------------\n')
-    e_parts.append('Linux/Mac: ./download_espa_order.py -e your_email@server.com -o ALL -d /some/directory/with/free/space\n\n') 
-    e_parts.append('Windows:   C:\python27\python download_espa_order.py -e your_email@server.com -o ALL -d C:\some\directory\with\\free\space')
-    e_parts.append('\n ')
-    epilog = ''.join(e_parts)
- 
+    epilog = ('ESPA Bulk Download Client Version 1.0.0. [Tested with Python 2.7]\n'
+              'Retrieves all completed scenes for the user/order\n'
+              'and places them into the target directory.\n'
+              'Scenes are organized by order.\n\n'
+              'It is safe to cancel and restart the client, as it will\n'
+              'only download scenes one time (per directory)\n'
+              ' \n'
+              '*** Important ***\n'
+              'If you intend to automate execution of this script,\n'
+              'please take care to ensure only 1 instance runs at a time.\n'
+              'Also please do not schedule execution more frequently than\n'
+              'once per hour.\n'
+              ' \n'
+              '------------\n'
+              'Examples:\n'
+              '------------\n'
+              'Linux/Mac: ./download_espa_order.py -e your_email@server.com -o ALL -d /some/directory/with/free/space\n\n'
+              'Windows:   C:\python27\python download_espa_order.py -e your_email@server.com -o ALL -d C:\some\directory\with\\free\space'
+              '\n ')
+
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
     
     parser.add_argument("-e", "--email", 
@@ -211,22 +251,17 @@ if __name__ == '__main__':
                         help="EE/ESPA account username")
 
     parser.add_argument("-p", "--password",
-                        required=True,
+                        required=False,
                         help="EE/ESPA account password")
 
     parser.add_argument("-v", "--verbose",
                         required=False,
+                        action='store_true',
                         help="be vocal about process")
 
     parser.add_argument("-i", "--host",
                         required=False)
 
-    args = parser.parse_args()
-    
-    storage = LocalStorage(args.target_directory)
+    parsed_args = parser.parse_args()
 
-    print 'Retrieving Feed'
-    for scene in SceneFeed(args.email, args.username, args.password, args.host).get_items(args.order):
-        print('\nNow processing scene %s.' % scene.name)
-        storage.store(scene)
-
+    main(**vars(parsed_args))
