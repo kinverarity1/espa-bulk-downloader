@@ -16,6 +16,7 @@ Changes:
 24 August 2016: Guy Serbin added:
 1. The downloads will now tell you which file number of all available scenes is being downloaded.
 2. Added a try/except clause for cases where the remote server closes the connection during a download.
+23 September 2016: Converted to using the ESPA API proper rather than relying on the RSS feed
 
 """
 import argparse
@@ -168,6 +169,7 @@ class LocalStorage(object):
             except Exception as e:
                 print(str(e))
                 break
+
         if first_byte >= file_size:
             os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
 
@@ -203,8 +205,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
             scenes = api.get_completed_scenes(o)
 
             for s in range(len(scenes)):
-                if verbose:
-                    print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
+                print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
 
                 scene = Scene(scenes[s])
                 storage.store(scene)
