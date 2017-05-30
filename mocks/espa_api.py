@@ -12,3 +12,8 @@ class MockApiRequest(dict):
             self.update({'orders': ['production@email.com-0000-00-00']})
         if 'order-status' in url:
             self.update({'orderid': 'production@email.com-0000-00-00', 'status': 'complete'})
+
+
+class MockDownloadRequest(object):
+    def __init__(self, *args, **kwargs):
+        self.headers = {'Content-Length': 0}
