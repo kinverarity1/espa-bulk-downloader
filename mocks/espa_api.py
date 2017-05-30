@@ -6,7 +6,7 @@ class MockApiRequest(dict):
         self.store = dict()
         if 'item-status' in url:
             self.update({'orderid': {'production@email.com-0000-00-00': [{
-                "product_dload_url": "http://download.com/filename.tar.gz"
+                "product_dload_url": "http://download.com/orders/production@email.com-0000-00-00/filename.tar.gz"
             }]}})
         if 'list-orders' in url:
             self.update({'orders': ['production@email.com-0000-00-00']})
