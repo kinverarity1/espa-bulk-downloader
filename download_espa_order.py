@@ -55,7 +55,12 @@ class Api(object):
         if data:
             data = json.dumps(data)
 
-        request = ul.Request(self.host + endpoint, data=data)
+        if sys.version_info[0] == 3:
+            request = ul.Request(self.host + endpoint, data=data.encode(),
+                                 method='GET')
+        else:
+            request = ul.Request(self.host + endpoint, data=data)
+            request.get_method = lambda: 'GET'
 
         base64string = (base64
                         .encodestring('%s:%s' % (self.username, self.password))
