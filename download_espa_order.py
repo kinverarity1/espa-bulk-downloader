@@ -71,7 +71,14 @@ class Api(object):
         except ul.HTTPError as e:
             result = e
 
-        return json.loads(result.read().decode())
+        resp = json.loads(result.read().decode())
+        if isinstance(resp, dict):
+            messages = resp.pop('messages', dict())
+            if messages.get('errors'):
+                raise Exception('ERRORS: {}'.format(messages.get('errors')))
+            if messages.get('warnings'):
+                print('WARNINGS: {}'.format(messages.get('warnings')))
+        return resp
 
     def get_completed_scenes(self, orderid):
         resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
