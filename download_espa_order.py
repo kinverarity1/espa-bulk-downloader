@@ -201,6 +201,8 @@ def main(username, email, order, target_directory, password=None, host=None, ver
 
         for o in orders:
             scenes = api.get_completed_scenes(o)
+            if len(scenes) < 1:
+                print('No scenes in "completed" state for order {}'.format(order))
 
             for s in range(len(scenes)):
                 print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
