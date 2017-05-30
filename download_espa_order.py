@@ -77,8 +77,10 @@ class Api(object):
 
     def retrieve_all_orders(self, email):
         ret = []
-
-        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email))['orders']
+        url = '/api/v1/list-orders'
+        if email:
+            url += '/{0}'.format(email)
+        all_orders = self.api_request(url)['orders']
 
         # Need to sift through and only pull non-purged orders
         for o in all_orders:
