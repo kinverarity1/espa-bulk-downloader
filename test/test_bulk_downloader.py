@@ -23,6 +23,11 @@ class TestAPIInteraction(unittest.TestCase):
         self.assertIsInstance(orders, list)
         self.assertIn(self.orderid, orders)
 
+    @patch('download_espa_order.Api.api_request', MockApiRequest)
+    def test_get_items(self):
+        scenes = self.api.get_completed_scenes(self.orderid)
+        self.assertIsInstance(scenes, list)
+
 
 class TestUserErrors(unittest.TestCase):
     def setUp(self):
