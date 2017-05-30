@@ -78,33 +78,22 @@ class Api(object):
                 raise Exception('ERRORS: {}'.format(messages.get('errors')))
             if messages.get('warnings'):
                 print('WARNINGS: {}'.format(messages.get('warnings')))
+
         return resp
 
     def get_completed_scenes(self, orderid):
-        resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
-
-        if "msg" in resp:
-            raise Exception(resp)
-
-        return [_.get('product_dload_url') for _ in resp['orderid'][orderid] if _.get('product_dload_url')]
+        filters = {'status': 'complete'}
+        resp = self.api_request('/api/v1/item-status/{0}'.format(orderid),
+                                data=filters)
+        urls = [_.get('product_dload_url') for _ in resp[orderid]]
+        return urls
 
     def retrieve_all_orders(self, email):
-        ret = []
-        url = '/api/v1/list-orders'
-        if email:
-            url += '/{0}'.format(email)
-        all_orders = self.api_request(url)['orders']
+        filters = {'status': 'complete'}
+        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email),
+                                      data=filters)
 
-        # Need to sift through and only pull non-purged orders
-        for o in all_orders:
-            resp = self.api_request('/api/v1/order-status/{0}'.format(o))
-
-            if 'msg' in resp:
-                raise Exception(resp)
-            elif 'status' in resp and resp['status'] != 'purged':
-                ret.append(o)
-
-        return ret
+        return all_orders
 
     def __enter__(self):
         return self
