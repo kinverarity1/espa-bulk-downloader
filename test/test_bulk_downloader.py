@@ -12,6 +12,7 @@ class TestAPIInteraction(unittest.TestCase):
         self.password = 'secret1'
         self.api = Api(self.host, self.username, self.password)
         self.email = 'production@email.com'
+        self.orderid = 'production@email.com-0000-00-00'
 
     def tearDown(self):
         pass
@@ -20,6 +21,7 @@ class TestAPIInteraction(unittest.TestCase):
     def test_api_get_completed_scenes(self):
         orders = self.api.retrieve_all_orders(self.email)
         self.assertIsInstance(orders, list)
+        self.assertIn(self.orderid, orders)
 
 
 class TestUserErrors(unittest.TestCase):
