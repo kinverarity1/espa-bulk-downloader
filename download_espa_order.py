@@ -234,8 +234,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
     
-    parser.add_argument("-e", "--email", 
-                        required=True,
+    parser.add_argument("-e", "--email",
+                        required=False,
                         help="email address for the user that submitted the order)")
                         
     parser.add_argument("-o", "--order",
