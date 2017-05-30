@@ -56,18 +56,16 @@ class Api(object):
             data = json.dumps(data)
 
         request = ul.Request(self.host + endpoint, data=data)
-
-        base64string = (base64
-                        .encodestring('%s:%s' % (self.username, self.password))
-                        .replace('\n', ''))
-        request.add_header("Authorization", "Basic %s" % base64string)
+        instr = '{}:{}'.format(self.username, self.password).encode()
+        base64string = (base64.encodestring(instr).strip().decode())
+        request.add_header("Authorization", "Basic {}".format(base64string))
 
         try:
             result = ul.urlopen(request)
         except ul.HTTPError as e:
             result = e
 
-        return json.loads(result.read())
+        return json.loads(result.read().decode())
 
     def get_completed_scenes(self, orderid):
         resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
