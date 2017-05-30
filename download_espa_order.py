@@ -57,7 +57,7 @@ class Api(object):
 
         request = ul.Request(self.host + endpoint, data=data)
         instr = '{}:{}'.format(self.username, self.password).encode()
-        base64string = (base64.encodestring(instr).strip().decode())
+        base64string = base64.encodestring(instr).strip().decode()
         request.add_header("Authorization", "Basic {}".format(base64string))
 
         try:
