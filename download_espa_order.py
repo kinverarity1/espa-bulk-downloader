@@ -264,4 +264,7 @@ if __name__ == '__main__':
 
     parsed_args = parser.parse_args()
 
-    main(**vars(parsed_args))
+    try:
+        main(**vars(parsed_args))
+    except BaseException as error:
+        print('ERROR: {}'.format(str(error)))
