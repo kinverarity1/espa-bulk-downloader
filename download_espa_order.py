@@ -56,18 +56,16 @@ class Api(object):
             data = json.dumps(data)
 
         request = ul.Request(self.host + endpoint, data=data)
-
-        base64string = (base64
-                        .encodestring('%s:%s' % (self.username, self.password))
-                        .replace('\n', ''))
-        request.add_header("Authorization", "Basic %s" % base64string)
+        instr = '{}:{}'.format(self.username, self.password).encode()
+        base64string = base64.encodestring(instr).strip().decode()
+        request.add_header("Authorization", "Basic {}".format(base64string))
 
         try:
             result = ul.urlopen(request)
         except ul.HTTPError as e:
             result = e
 
-        return json.loads(result.read())
+        return json.loads(result.read().decode())
 
     def get_completed_scenes(self, orderid):
         resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
@@ -79,8 +77,10 @@ class Api(object):
 
     def retrieve_all_orders(self, email):
         ret = []
-
-        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email))['orders']
+        url = '/api/v1/list-orders'
+        if email:
+            url += '/{0}'.format(email)
+        all_orders = self.api_request(url)['orders']
 
         # Need to sift through and only pull non-purged orders
         for o in all_orders:
@@ -203,6 +203,8 @@ def main(username, email, order, target_directory, password=None, host=None, ver
 
         for o in orders:
             scenes = api.get_completed_scenes(o)
+            if len(scenes) < 1:
+                print('No scenes in "completed" state for order {}'.format(o))
 
             for s in range(len(scenes)):
                 print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
@@ -234,8 +236,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
     
-    parser.add_argument("-e", "--email", 
-                        required=True,
+    parser.add_argument("-e", "--email",
+                        required=False,
                         help="email address for the user that submitted the order)")
                         
     parser.add_argument("-o", "--order",
@@ -264,4 +266,7 @@ if __name__ == '__main__':
 
     parsed_args = parser.parse_args()
 
-    main(**vars(parsed_args))
+    try:
+        main(**vars(parsed_args))
+    except BaseException as error:
+        print('ERROR: {}'.format(str(error)))
