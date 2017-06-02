@@ -85,6 +85,8 @@ class Api(object):
         filters = {'status': 'complete'}
         resp = self.api_request('/api/v1/item-status/{0}'.format(orderid),
                                 data=filters)
+        if orderid not in resp:
+            raise Exception('ERROR: Order ID {} not found'.format(orderid))
         urls = [_.get('product_dload_url') for _ in resp[orderid]]
         return urls
 
