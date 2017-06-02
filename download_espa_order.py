@@ -75,7 +75,7 @@ class Api(object):
         if isinstance(resp, dict):
             messages = resp.pop('messages', dict())
             if messages.get('errors'):
-                raise Exception('ERRORS: {}'.format(messages.get('errors')))
+                raise Exception('{}'.format(messages.get('errors')))
             if messages.get('warnings'):
                 print('WARNINGS: {}'.format(messages.get('warnings')))
 
@@ -86,7 +86,7 @@ class Api(object):
         resp = self.api_request('/api/v1/item-status/{0}'.format(orderid),
                                 data=filters)
         if orderid not in resp:
-            raise Exception('ERROR: Order ID {} not found'.format(orderid))
+            raise Exception('Order ID {} not found'.format(orderid))
         urls = [_.get('product_dload_url') for _ in resp[orderid]]
         return urls
 
