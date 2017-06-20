@@ -55,43 +55,47 @@ class Api(object):
         if data:
             data = json.dumps(data)
 
-        request = ul.Request(self.host + endpoint, data=data)
+        if sys.version_info[0] == 3:
+            request = ul.Request(self.host + endpoint, data=data.encode(),
+                                 method='GET')
+        else:
+            request = ul.Request(self.host + endpoint, data=data)
+            request.get_method = lambda: 'GET'
 
-        base64string = (base64
-                        .encodestring('%s:%s' % (self.username, self.password))
-                        .replace('\n', ''))
-        request.add_header("Authorization", "Basic %s" % base64string)
+        instr = '{}:{}'.format(self.username, self.password).encode()
+        base64string = base64.encodestring(instr).strip().decode()
+        request.add_header("Authorization", "Basic {}".format(base64string))
 
         try:
             result = ul.urlopen(request)
         except ul.HTTPError as e:
             result = e
 
-        return json.loads(result.read())
+        resp = json.loads(result.read().decode())
+        if isinstance(resp, dict):
+            messages = resp.pop('messages', dict())
+            if messages.get('errors'):
+                raise Exception('{}'.format(messages.get('errors')))
+            if messages.get('warnings'):
+                print('WARNINGS: {}'.format(messages.get('warnings')))
+
+        return resp
 
     def get_completed_scenes(self, orderid):
-        resp = self.api_request('/api/v1/item-status/{0}'.format(orderid))
-
-        if "msg" in resp:
-            raise Exception(resp)
-
-        return [_.get('product_dload_url') for _ in resp['orderid'][orderid] if _.get('product_dload_url')]
+        filters = {'status': 'complete'}
+        resp = self.api_request('/api/v1/item-status/{0}'.format(orderid),
+                                data=filters)
+        if orderid not in resp:
+            raise Exception('Order ID {} not found'.format(orderid))
+        urls = [_.get('product_dload_url') for _ in resp[orderid]]
+        return urls
 
     def retrieve_all_orders(self, email):
-        ret = []
+        filters = {'status': 'complete'}
+        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email),
+                                      data=filters)
 
-        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email))['orders']
-
-        # Need to sift through and only pull non-purged orders
-        for o in all_orders:
-            resp = self.api_request('/api/v1/order-status/{0}'.format(o))
-
-            if 'msg' in resp:
-                raise Exception(resp)
-            elif 'status' in resp and resp['status'] != 'purged':
-                ret.append(o)
-
-        return ret
+        return all_orders
 
     def __enter__(self):
         return self
@@ -265,6 +269,8 @@ def main(username, email, order, target_directory, password=None, host=None, ver
 
         for o in orders:
             scenes = api.get_completed_scenes(o)
+            if len(scenes) < 1:
+                print('No scenes in "completed" state for order {}'.format(o))
 
             for s in range(len(scenes)):
                 print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
@@ -298,8 +304,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
     
-    parser.add_argument("-e", "--email", 
-                        required=True,
+    parser.add_argument("-e", "--email",
+                        required=False,
                         help="email address for the user that submitted the order)")
                         
     parser.add_argument("-o", "--order",
@@ -333,4 +339,7 @@ if __name__ == '__main__':
 
     parsed_args = parser.parse_args()
 
-    main(**vars(parsed_args))
+    try:
+        main(**vars(parsed_args))
+    except BaseException as error:
+        print('ERROR: {}'.format(str(error)))
