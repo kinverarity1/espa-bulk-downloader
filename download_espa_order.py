@@ -154,7 +154,12 @@ class LocalStorage(object):
         req = ul.Request(scene.srcurl)
         req.get_method = lambda: 'HEAD'
 
-        head = ul.urlopen(req)
+        try:
+            head = ul.urlopen(req)
+        except ul.HTTPError:
+            print('Scene not reachable at {0:s}'.format(req.get_full_url()))
+            return
+
         file_size = int(head.headers['Content-Length'])
 
         first_byte = 0
@@ -187,8 +192,75 @@ class LocalStorage(object):
 
         return os.path.getsize(self.tmp_scene_path(scene))
 
+    def cksum_filename(self, scene):
+        return scene.filename.replace('.tar.gz', '.md5')
 
-def main(username, email, order, target_directory, password=None, host=None, verbose=False):
+    def cksum_path(self, scene):
+        return ''.join([self.directory_path(scene), self.cksum_filename(scene)])
+
+    def tmp_cksum_path(self, scene):
+        return ''.join([self.directory_path(scene), self.cksum_filename(scene), '.part'])
+
+    def cksum_is_stored(self, scene):
+        return os.path.exists(self.cksum_path(scene))
+
+    def cksum_url(self, scene):
+        return scene.srcurl.replace('.tar.gz', '.md5')
+
+    def cksum_store(self, scene):
+        if self.cksum_is_stored(scene):
+            if self.verbose:
+                print('Checksum already exists on disk, skipping.')
+
+            return
+
+        download_directory = self.directory_path(scene)
+        # make sure we have a target to land the scenes
+        if not os.path.exists(download_directory):
+            os.makedirs(download_directory)
+            print ("Created target_directory:%s" % download_directory)
+
+        req = ul.Request(self.cksum_url(scene))
+        req.get_method = lambda: 'HEAD'
+
+        try:
+            head = ul.urlopen(req)
+        except ul.HTTPError:
+            print('Scene checksum not reachable at {0:s}'.format(req.get_full_url()))
+            return
+
+        file_size = int(head.headers['Content-Length'])
+
+        first_byte = 0
+        if os.path.exists(self.cksum_path(scene)):
+            first_byte = os.path.getsize(self.cksum_path(scene))
+
+        if self.verbose:
+            print ("Downloading checksum %s to %s" % (self.cksum_filename(scene), download_directory))
+
+        while first_byte < file_size:
+            try:
+                first_byte = self._download_cksum(first_byte, scene)
+                time.sleep(random.randint(5, 30))
+            except Exception as e:
+                print(str(e))
+                break
+
+        if first_byte >= file_size:
+            os.rename(self.tmp_cksum_path(scene), self.cksum_path(scene))
+
+    def _download_cksum(self, first_byte, scene):
+        req = ul.Request(self.cksum_url(scene))
+        req.headers['Range'] = 'bytes={}-'.format(first_byte)
+
+        with open(self.tmp_cksum_path(scene), 'ab') as target:
+            source = ul.urlopen(req)
+            shutil.copyfileobj(source, target)
+
+        return os.path.getsize(self.tmp_cksum_path(scene))
+
+
+def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
     if not password:
         password = getpass('Password: ')
     if not host:
@@ -215,6 +287,8 @@ def main(username, email, order, target_directory, password=None, host=None, ver
 
                 scene = Scene(scenes[s])
                 storage.store(scene)
+                if checksum:
+                    storage.cksum_store(scene)
 
 
 if __name__ == '__main__':
@@ -267,6 +341,11 @@ if __name__ == '__main__':
 
     parser.add_argument("-i", "--host",
                         required=False)
+
+    parser.add_argument("-c", '--checksum',
+                        required=False,
+                        action='store_true',
+                        help="if set, download checksum files.")
 
     parsed_args = parser.parse_args()
 
