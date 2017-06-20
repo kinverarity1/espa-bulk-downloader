@@ -154,7 +154,12 @@ class LocalStorage(object):
         req = ul.Request(scene.srcurl)
         req.get_method = lambda: 'HEAD'
 
-        head = ul.urlopen(req)
+        try:
+            head = ul.urlopen(req)
+        except ul.HTTPError:
+            print('Scene not reachable at {0:s}'.format(req.get_full_url()))
+            return
+
         file_size = int(head.headers['Content-Length'])
 
         first_byte = 0
@@ -218,7 +223,12 @@ class LocalStorage(object):
         req = ul.Request(self.cksum_url(scene))
         req.get_method = lambda: 'HEAD'
 
-        head = ul.urlopen(req)
+        try:
+            head = ul.urlopen(req)
+        except ul.HTTPError:
+            print('Scene checksum not reachable at {0:s}'.format(req.get_full_url()))
+            return
+
         file_size = int(head.headers['Content-Length'])
 
         first_byte = 0
