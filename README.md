@@ -1,7 +1,9 @@
+# espa-bulk-downloader
+
 Automatically downloads all completed espa scenes.  Each scene is downloaded to the `--target_directory` and organized by order.
 
 # Installation
-* Note: These were tested with python 2.7.
+* Note: These were tested with both python 2.7.13 and 3.6.5.
 
 * Clone this repository:
 ```
@@ -17,15 +19,15 @@ download_espa_order.py -h
 * Alternatively you can just download the stand alone zip file which only requires python to run
 
 ### Runtime options
-`-e or --email` The email address used to submit the order
 
-`-o or --order` The order you wish to download.  Maybe also use `ALL`
-
-`-d or --target_directory` The local directory to store downloaded scenes
-
-`-u or --username` Your ERS username
-
-`-p or --password` Your ERS password
+Argument | Description
+---|---
+`-e or --email` | The email address used to submit the order
+`-o or --order` | The order you wish to download.  Maybe also use `ALL`
+`-d or --target_directory` | The local directory to store downloaded scenes
+`-u or --username` | Your ERS username
+`-p or --password` | Your ERS password
+`-c or --checksum` | Download and compare MD5 hash
 
 Linux/Mac Example: `python ./download_espa_order.py -e your_email@server.com -o ALL -d /some/directory/with/free/space -u foo -p bar`
 
