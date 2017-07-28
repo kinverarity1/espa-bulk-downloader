@@ -4,7 +4,7 @@
 Purpose: A simple python client that will download all available (completed) scenes for
          a user order(s).
 
-Requires: Python feedparser and standard Python installation.
+Requires: Standard Python installation.
 
 Version: 1.0
 
