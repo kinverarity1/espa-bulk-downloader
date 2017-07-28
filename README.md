@@ -27,7 +27,7 @@ Argument | Description
 `-d or --target_directory` | The local directory to store downloaded scenes
 `-u or --username` | Your ERS username
 `-p or --password` | Your ERS password
-`-c or --checksum` | Download and compare MD5 hash
+`-c or --checksum` | Download checksum files (will also compare the contents)
 
 Linux/Mac Example: `python ./download_espa_order.py -e your_email@server.com -d /some/directory/with/free/space -u foo -p bar`
 
