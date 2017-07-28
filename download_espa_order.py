@@ -103,54 +103,69 @@ class Api(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-                
+
 class Scene(object):
-    
+
     def __init__(self, srcurl):
         self.srcurl = srcurl
 
         parts = self.srcurl.split("/")
         self.orderid = parts[4]
         self.filename = parts[-1]
-        
         self.name = self.filename.split('.tar.gz')[0]
 
-                  
+    def checksum(self):
+        self.srcurl = str(self.srcurl).replace('.tar.gz', '.md5')
+        self.filename = self.filename.replace('.tar.gz', '.md5')
+        self.name = '%s MD5 checksum' % self.name
+        return self
+
+
 class LocalStorage(object):
-    
+
     def __init__(self, basedir, verbose=False):
         self.basedir = basedir
         self.verbose = verbose
 
     def directory_path(self, scene):
-        return ''.join([self.basedir, os.sep, scene.orderid, os.sep])
-        
+        path = ''.join([self.basedir, os.sep, scene.orderid, os.sep])
+        if not os.path.exists(path):
+            os.makedirs(path)
+            if self.verbose:
+                print ("Created target_directory: %s " % path)
+        return path
+
     def scene_path(self, scene):
         return ''.join([self.directory_path(scene), scene.filename])
-    
+
     def tmp_scene_path(self, scene):
         return ''.join([self.directory_path(scene), scene.filename, '.part'])
-    
-    def is_stored(self, scene):        
-        return os.path.exists(self.scene_path(scene))        
-    
-    def store(self, scene):
-        
+
+    def is_stored(self, scene):
+        return os.path.exists(self.scene_path(scene))
+
+    def store(self, scene, checksum=False):
         if self.is_stored(scene):
             if self.verbose:
                 print('Scene already exists on disk, skipping.')
-
             return
-                    
+
         download_directory = self.directory_path(scene)
-        
-        # make sure we have a target to land the scenes
-        if not os.path.exists(download_directory):
-            os.makedirs(download_directory)
+        package_path = self._download(scene, download_directory)
+        if checksum:
+            checksum_path = self._download(scene.checksum(), download_directory)
 
-            if self.verbose:
-                print ("Created target_directory: %s " % download_directory)
+    def _download_bytes(self, first_byte, scene):
+        req = ul.Request(scene.srcurl)
+        req.headers['Range'] = 'bytes={}-'.format(first_byte)
 
+        with open(self.tmp_scene_path(scene), 'ab') as target:
+            source = ul.urlopen(req)
+            shutil.copyfileobj(source, target)
+
+        return os.path.getsize(self.tmp_scene_path(scene))
+
+    def _download(self, scene, target):
         req = ul.Request(scene.srcurl)
         req.get_method = lambda: 'HEAD'
 
@@ -167,13 +182,13 @@ class LocalStorage(object):
             first_byte = os.path.getsize(self.tmp_scene_path(scene))
 
         if self.verbose:
-            print ("Downloading %s, to: %s" % (scene.name, download_directory))
+            print ("Downloading %s, to: %s" % (scene.name, target))
 
         while first_byte < file_size:
             # Added try/except to keep the script from crashing if the remote host closes the connection.
             # Instead, it moves on to the next file.
             try:
-                first_byte = self._download(first_byte, scene)
+                first_byte = self._download_bytes(first_byte, scene)
                 time.sleep(random.randint(5, 30))
             except Exception as e:
                 print(str(e))
@@ -181,83 +196,8 @@ class LocalStorage(object):
 
         if first_byte >= file_size:
             os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
+        return self.scene_path(scene)
 
-    def _download(self, first_byte, scene):
-        req = ul.Request(scene.srcurl)
-        req.headers['Range'] = 'bytes={}-'.format(first_byte)
-
-        with open(self.tmp_scene_path(scene), 'ab') as target:
-            source = ul.urlopen(req)
-            shutil.copyfileobj(source, target)
-
-        return os.path.getsize(self.tmp_scene_path(scene))
-
-    def cksum_filename(self, scene):
-        return scene.filename.replace('.tar.gz', '.md5')
-
-    def cksum_path(self, scene):
-        return ''.join([self.directory_path(scene), self.cksum_filename(scene)])
-
-    def tmp_cksum_path(self, scene):
-        return ''.join([self.directory_path(scene), self.cksum_filename(scene), '.part'])
-
-    def cksum_is_stored(self, scene):
-        return os.path.exists(self.cksum_path(scene))
-
-    def cksum_url(self, scene):
-        return scene.srcurl.replace('.tar.gz', '.md5')
-
-    def cksum_store(self, scene):
-        if self.cksum_is_stored(scene):
-            if self.verbose:
-                print('Checksum already exists on disk, skipping.')
-
-            return
-
-        download_directory = self.directory_path(scene)
-        # make sure we have a target to land the scenes
-        if not os.path.exists(download_directory):
-            os.makedirs(download_directory)
-            print ("Created target_directory:%s" % download_directory)
-
-        req = ul.Request(self.cksum_url(scene))
-        req.get_method = lambda: 'HEAD'
-
-        try:
-            head = ul.urlopen(req)
-        except ul.HTTPError:
-            print('Scene checksum not reachable at {0:s}'.format(req.get_full_url()))
-            return
-
-        file_size = int(head.headers['Content-Length'])
-
-        first_byte = 0
-        if os.path.exists(self.cksum_path(scene)):
-            first_byte = os.path.getsize(self.cksum_path(scene))
-
-        if self.verbose:
-            print ("Downloading checksum %s to %s" % (self.cksum_filename(scene), download_directory))
-
-        while first_byte < file_size:
-            try:
-                first_byte = self._download_cksum(first_byte, scene)
-                time.sleep(random.randint(5, 30))
-            except Exception as e:
-                print(str(e))
-                break
-
-        if first_byte >= file_size:
-            os.rename(self.tmp_cksum_path(scene), self.cksum_path(scene))
-
-    def _download_cksum(self, first_byte, scene):
-        req = ul.Request(self.cksum_url(scene))
-        req.headers['Range'] = 'bytes={}-'.format(first_byte)
-
-        with open(self.tmp_cksum_path(scene), 'ab') as target:
-            source = ul.urlopen(req)
-            shutil.copyfileobj(source, target)
-
-        return os.path.getsize(self.tmp_cksum_path(scene))
 
 
 def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
@@ -286,9 +226,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
                 print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
 
                 scene = Scene(scenes[s])
-                storage.store(scene)
-                if checksum:
-                    storage.cksum_store(scene)
+                storage.store(scene, checksum)
 
 
 if __name__ == '__main__':
@@ -345,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument("-c", '--checksum',
                         required=False,
                         action='store_true',
-                        help="if set, download checksum files.")
+                        help="download additional MD5 checksum files")
 
     parsed_args = parser.parse_args()
 
