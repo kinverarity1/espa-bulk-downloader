@@ -92,7 +92,7 @@ class Api(object):
 
     def retrieve_all_orders(self, email):
         filters = {'status': 'complete'}
-        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email),
+        all_orders = self.api_request('/api/v1/list-orders/{0}'.format(email or ''),
                                       data=filters)
 
         return all_orders
@@ -313,15 +313,15 @@ if __name__ == '__main__':
               '\n ')
 
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
-    
+
     parser.add_argument("-e", "--email",
                         required=False,
                         help="email address for the user that submitted the order)")
-                        
+
     parser.add_argument("-o", "--order",
-                        required=True,
+                        required=False, default='ALL',
                         help="which order to download (use ALL for every order)")
-                        
+
     parser.add_argument("-d", "--target_directory",
                         required=True,
                         help="where to store the downloaded scenes")
