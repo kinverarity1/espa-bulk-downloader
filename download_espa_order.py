@@ -1,16 +1,14 @@
 #!/usr/bin/env python
 
 """
-Author: David Hill
-Date: 01/31/2014
 Purpose: A simple python client that will download all available (completed) scenes for
          a user order(s).
 
-Requires: Python feedparser and standard Python installation.     
+Requires: Python feedparser and standard Python installation.
 
 Version: 1.0
 
-Changes: 
+Changes:
 
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
 24 August 2016: Guy Serbin added:
@@ -103,47 +101,47 @@ class Api(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-                
+
 class Scene(object):
-    
+
     def __init__(self, srcurl):
         self.srcurl = srcurl
 
         parts = self.srcurl.split("/")
         self.orderid = parts[4]
         self.filename = parts[-1]
-        
+
         self.name = self.filename.split('.tar.gz')[0]
 
-                  
+
 class LocalStorage(object):
-    
+
     def __init__(self, basedir, verbose=False):
         self.basedir = basedir
         self.verbose = verbose
 
     def directory_path(self, scene):
         return ''.join([self.basedir, os.sep, scene.orderid, os.sep])
-        
+
     def scene_path(self, scene):
         return ''.join([self.directory_path(scene), scene.filename])
-    
+
     def tmp_scene_path(self, scene):
         return ''.join([self.directory_path(scene), scene.filename, '.part'])
-    
-    def is_stored(self, scene):        
-        return os.path.exists(self.scene_path(scene))        
-    
+
+    def is_stored(self, scene):
+        return os.path.exists(self.scene_path(scene))
+
     def store(self, scene):
-        
+
         if self.is_stored(scene):
             if self.verbose:
                 print('Scene already exists on disk, skipping.')
 
             return
-                    
+
         download_directory = self.directory_path(scene)
-        
+
         # make sure we have a target to land the scenes
         if not os.path.exists(download_directory):
             os.makedirs(download_directory)
@@ -313,15 +311,15 @@ if __name__ == '__main__':
               '\n ')
 
     parser = argparse.ArgumentParser(epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter)
-    
+
     parser.add_argument("-e", "--email",
                         required=False,
                         help="email address for the user that submitted the order)")
-                        
+
     parser.add_argument("-o", "--order",
                         required=True,
                         help="which order to download (use ALL for every order)")
-                        
+
     parser.add_argument("-d", "--target_directory",
                         required=True,
                         help="where to store the downloaded scenes")
