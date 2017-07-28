@@ -27,6 +27,7 @@ import shutil
 import sys
 import time
 import json
+import hashlib
 from getpass import getpass
 
 if sys.version_info[0] == 3:
@@ -154,6 +155,7 @@ class LocalStorage(object):
         package_path = self._download(scene, download_directory)
         if checksum:
             checksum_path = self._download(scene.checksum(), download_directory)
+            self._compare_checksum(package_path, checksum_path)
 
     def _download_bytes(self, first_byte, scene):
         req = ul.Request(scene.srcurl)
@@ -198,6 +200,16 @@ class LocalStorage(object):
             os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
         return self.scene_path(scene)
 
+    def _compare_checksum(self, filepath, checksum_path):
+        remote_md5hash = open(checksum_path, 'r').read().split()[0].strip()
+        local_md5hash = hashlib.md5(open(filepath, 'rb').read()).hexdigest()
+        if local_md5hash != remote_md5hash:
+            if self.verbose:
+                print('Remote: %s Local: %s' % (remote_md5hash, local_md5hash))
+            print('WARNING: Failed checksum verification: %s' % os.path.basename(filepath))
+        else:
+            if self.verbose:
+                print('Checksum %s matches' % local_md5hash)
 
 
 def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
@@ -283,7 +295,7 @@ if __name__ == '__main__':
     parser.add_argument("-c", '--checksum',
                         required=False,
                         action='store_true',
-                        help="download additional MD5 checksum files")
+                        help="download additional MD5 checksum files (will warn if binaries do not match)")
 
     parsed_args = parser.parse_args()
 
