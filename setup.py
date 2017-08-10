@@ -10,7 +10,7 @@ setup(
     version='2.1.0',
 
     # Application author details:
-    author='David V. Hill',
+    author='USGS EROS ESPA',
 
     license=open('LICENSE.txt').read(),
 

@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 
 """
-Author: David Hill
-Date: 01/31/2014
 Purpose: A simple python client that will download all available (completed) scenes for
          a user order(s).
 
-Requires: Python feedparser and standard Python installation.     
+Requires: Standard Python installation.
 
 Version: 1.0
 
-Changes: 
+Changes:
 
+20 June 2017: Woodstonelee added option to download checksum and error handling on bad urls
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
 24 August 2016: Guy Serbin added:
 1. The downloads will now tell you which file number of all available scenes is being downloaded.
@@ -303,3 +302,4 @@ if __name__ == '__main__':
         main(**vars(parsed_args))
     except BaseException as error:
         print('ERROR: {}'.format(str(error)))
+
