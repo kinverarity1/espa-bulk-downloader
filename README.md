@@ -28,6 +28,7 @@ Argument | Description
 `-u or --username` | Your ERS username
 `-p or --password` | Your ERS password
 `-c or --checksum` | Download checksum files (will also compare the contents)
+`-k or --insecure` | (not recommended) Skip HTTPS certicate verifications
 
 Linux/Mac Example: `python ./download_espa_order.py -e your_email@server.com -d /some/directory/with/free/space -u foo -p bar`
 
