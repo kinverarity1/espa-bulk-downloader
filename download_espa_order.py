@@ -29,17 +29,18 @@ import json
 import hashlib
 from getpass import getpass
 
-if sys.version_info[0] == 3:
-    import urllib.request as ul
-else:
-    import urllib2 as ul
+import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+TIMEOUT = 10 # seconds
 
 class Api(object):
-    def __init__(self, username, password, host):
+    def __init__(self, username, password, host, insecure=False):
         self.host = host
         self.username = username
         self.password = password
+        self.insecure = insecure
 
     def api_request(self, endpoint, data=None):
         """
@@ -52,26 +53,12 @@ class Api(object):
         returns:
             Python dictionary representation of the API response
         """
-        if data:
-            data = json.dumps(data)
+        result = requests.get(self.host + endpoint, json=data, 
+                              auth=(self.username, self.password),
+                              verify=not(self.insecure))
+        result.raise_for_status()
+        resp = result.json()
 
-        if sys.version_info[0] == 3:
-            request = ul.Request(self.host + endpoint, data=data.encode(),
-                                 method='GET')
-        else:
-            request = ul.Request(self.host + endpoint, data=data)
-            request.get_method = lambda: 'GET'
-
-        instr = '{}:{}'.format(self.username, self.password).encode()
-        base64string = base64.encodestring(instr).strip().decode()
-        request.add_header("Authorization", "Basic {}".format(base64string))
-
-        try:
-            result = ul.urlopen(request)
-        except ul.HTTPError as e:
-            result = e
-
-        resp = json.loads(result.read().decode())
         if isinstance(resp, dict):
             messages = resp.pop('messages', dict())
             if messages.get('errors'):
@@ -123,9 +110,10 @@ class Scene(object):
 
 class LocalStorage(object):
 
-    def __init__(self, basedir, verbose=False):
+    def __init__(self, basedir, verbose=False, insecure=False):
         self.basedir = basedir
         self.verbose = verbose
+        self.insecure = insecure
 
     def directory_path(self, scene):
         path = ''.join([self.basedir, os.sep, scene.orderid, os.sep])
@@ -157,25 +145,23 @@ class LocalStorage(object):
             self._compare_checksum(package_path, checksum_path)
 
     def _download_bytes(self, first_byte, scene):
-        req = ul.Request(scene.srcurl)
-        req.headers['Range'] = 'bytes={}-'.format(first_byte)
+        resume_header = {'Range': 'bytes=%d-' % first_byte}
+        sock = requests.get(scene.srcurl, headers=resume_header, timeout=TIMEOUT,
+                            stream=True, verify=not(self.insecure), 
+                            allow_redirects=True)
 
-        with open(self.tmp_scene_path(scene), 'ab') as target:
-            source = ul.urlopen(req)
-            shutil.copyfileobj(source, target)
+        f = open(self.tmp_scene_path(scene), 'ab')
+        bytes_in_mb = 1024*1024
+        for block in sock.iter_content(chunk_size=bytes_in_mb): 
+            if block:
+                f.write(block)
+        f.close()
 
         return os.path.getsize(self.tmp_scene_path(scene))
 
     def _download(self, scene, target):
-        req = ul.Request(scene.srcurl)
-        req.get_method = lambda: 'HEAD'
-
-        try:
-            head = ul.urlopen(req)
-        except ul.HTTPError:
-            print('Scene not reachable at {0:s}'.format(req.get_full_url()))
-            return
-
+        head = requests.head(scene.srcurl, timeout=TIMEOUT,
+                             verify=not(self.insecure))
         file_size = int(head.headers['Content-Length'])
 
         first_byte = 0
@@ -211,15 +197,20 @@ class LocalStorage(object):
                 print('Checksum %s matches' % local_md5hash)
 
 
-def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
+def main(username, email, order, target_directory, password=None, host=None,
+         verbose=False, checksum=False, insecure=False):
     if not password:
         password = getpass('Password: ')
     if not host:
         host = 'https://espa.cr.usgs.gov'
 
-    storage = LocalStorage(target_directory, verbose=verbose)
+    if insecure:
+        print('WARNING: Unverified HTTPS request are being made. Using '
+              'certificate verification is strongly advised!')
 
-    with Api(username, password, host) as api:
+    storage = LocalStorage(target_directory, verbose=verbose, insecure=insecure)
+
+    with Api(username, password, host, insecure) as api:
         if order == 'ALL':
             orders = api.retrieve_all_orders(email)
         else:
@@ -295,6 +286,12 @@ if __name__ == '__main__':
                         required=False,
                         action='store_true',
                         help="download additional MD5 checksum files (will warn if binaries do not match)")
+
+    parser.add_argument("-k", '--insecure',
+                        required=False,
+                        action='store_true',
+                        help="Unverified HTTPS request. (certificate "
+                             "verification is strongly advised)")
 
     parsed_args = parser.parse_args()
 

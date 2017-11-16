@@ -31,5 +31,6 @@ setup(
 
     # Dependent packages (distributions)
     install_requires=[
+        "requests==2.18.4"
      ],
 )
