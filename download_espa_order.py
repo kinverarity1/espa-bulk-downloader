@@ -39,12 +39,83 @@ else:
 LOGGER = logging.getLogger(__name__)
 
 
+class HTTPSHandler(object):
+    """ Re-usable TLS-secured HTTP/REST communications """
+    def _set_ssl_context(self):
+        try:
+            from ssl import SSLContext, PROTOCOL_TLSv1_2
+        except ImportError:
+            msg = ('Cannot import SSL, HTTPS will not work '
+                   'on Python < 2.7.9') # TODO: Find a workaround
+            raise ImportError(msg)
+        else:
+            self.context = SSLContext(PROTOCOL_TLSv1_2)
+
+    def __init__(self, host=''):
+        self.host = host
+        self._set_ssl_context()
+        self.handler = ul.HTTPSHandler(context=self.context)
+        self.opener = ul.build_opener(self.handler)
+
+    def auth(self, username, password):
+        auth_handler = ul.HTTPBasicAuthHandler()
+        auth_handler.add_password(realm='Authentication Required',
+                                  uri=self.host, user=username,
+                                  passwd=password)
+        self.opener = ul.build_opener(auth_handler, self.handler)
+
+    def get(self, uri, data=None):
+        body = (json.dumps(data) if data else '').encode('ascii')
+        request = ul.Request(self.host + uri)
+        request.get_method = lambda: 'GET'
+        response = self.opener.open(request, data=body)
+        return json.loads(response.read().decode())
+
+    def _download_bytes(self, full_url, first_byte, tmp_scene_path):
+        request = ul.Request(full_url)
+        request.headers['Range'] = 'bytes={}-'.format(first_byte)
+
+        with open(tmp_scene_path, 'ab') as target:
+            source = self.opener.open(request)
+            shutil.copyfileobj(source, target)
+
+        return os.path.getsize(tmp_scene_path)
+
+    def download(self, uri, target_path, verbose=False):
+        request = ul.Request(self.host + uri)
+        request.get_method = lambda: 'HEAD'
+
+        try:
+            head = self.opener.open(request)
+        except ul.HTTPError:
+            LOGGER.error('Scene not reachable at {0:s}'.format(request.get_full_url()))
+            return
+
+        file_size = int(head.headers['Content-Length'])
+
+        first_byte, tmp_scene_path = 0, target_path + '.part'
+        if os.path.exists(tmp_scene_path):
+            first_byte = os.path.getsize(tmp_scene_path)
+
+        while first_byte < file_size:
+            # Added try/except to keep the script from crashing if the remote host closes the connection.
+            # Instead, it moves on to the next file.
+            try:
+                first_byte = self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
+                time.sleep(random.randint(5, 30))
+            except Exception as e:
+                LOGGER.error(str(e))
+                break
+
+        if first_byte >= file_size:
+            os.rename(tmp_scene_path, target_path)
+        return target_path
+
 
 class Api(object):
     def __init__(self, username, password, host):
-        self.host = host
-        self.username = username
-        self.password = password
+        self.handler = HTTPSHandler(host)
+        self.handler.auth(username, password)
 
     def api_request(self, endpoint, data=None):
         """
@@ -57,26 +128,7 @@ class Api(object):
         returns:
             Python dictionary representation of the API response
         """
-        if data:
-            data = json.dumps(data)
-
-        if sys.version_info[0] == 3:
-            request = ul.Request(self.host + endpoint, data=data.encode(),
-                                 method='GET')
-        else:
-            request = ul.Request(self.host + endpoint, data=data)
-            request.get_method = lambda: 'GET'
-
-        instr = '{}:{}'.format(self.username, self.password).encode()
-        base64string = base64.encodestring(instr).strip().decode()
-        request.add_header("Authorization", "Basic {}".format(base64string))
-
-        try:
-            result = ul.urlopen(request)
-        except ul.HTTPError as e:
-            result = e
-
-        resp = json.loads(result.read().decode())
+        resp = self.handler.get(endpoint, data)
         if isinstance(resp, dict):
             messages = resp.pop('messages', dict())
             if messages.get('errors'):
@@ -118,11 +170,12 @@ class Scene(object):
         self.filename = parts[-1]
         self.name = self.filename.split('.tar.gz')[0]
 
-    def checksum(self):
-        self.srcurl = str(self.srcurl).replace('.tar.gz', '.md5')
-        self.filename = self.filename.replace('.tar.gz', '.md5')
-        self.name = '%s MD5 checksum' % self.name
-        return self
+    @classmethod
+    def checksum(cls):
+        cls.srcurl = str(cls.srcurl).replace('.tar.gz', '.md5')
+        cls.filename = cls.filename.replace('.tar.gz', '.md5')
+        cls.name = '%s MD5 checksum' % cls.name
+        return cls
 
 
 class LocalStorage(object):
@@ -130,19 +183,17 @@ class LocalStorage(object):
     def __init__(self, basedir, verbose=False):
         self.basedir = basedir
         self.verbose = verbose
+        self.handler = HTTPSHandler()
 
     def directory_path(self, scene):
-        path = ''.join([self.basedir, os.sep, scene.orderid, os.sep])
+        path = os.path.join(self.basedir, scene.orderid)
         if not os.path.exists(path):
             os.makedirs(path)
             LOGGER.debug("Created target_directory: %s " % path)
         return path
 
     def scene_path(self, scene):
-        return ''.join([self.directory_path(scene), scene.filename])
-
-    def tmp_scene_path(self, scene):
-        return ''.join([self.directory_path(scene), scene.filename, '.part'])
+        return os.path.join(self.directory_path(scene), scene.filename)
 
     def is_stored(self, scene):
         return os.path.exists(self.scene_path(scene))
@@ -152,65 +203,11 @@ class LocalStorage(object):
             LOGGER.debug('Scene already exists on disk, skipping.')
             return
 
-        download_directory = self.directory_path(scene)
-        package_path = self._download(scene, download_directory)
+        LOGGER.debug("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
+        self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
         if checksum:
-            checksum_path = self._download(scene.checksum(), download_directory)
-            self._compare_checksum(package_path, checksum_path)
-
-    def _download_bytes(self, first_byte, scene):
-        req = ul.Request(scene.srcurl)
-        req.headers['Range'] = 'bytes={}-'.format(first_byte)
-
-        with open(self.tmp_scene_path(scene), 'ab') as target:
-            source = ul.urlopen(req)
-            shutil.copyfileobj(source, target)
-
-        return os.path.getsize(self.tmp_scene_path(scene))
-
-    def _download(self, scene, target):
-        req = ul.Request(scene.srcurl)
-        req.get_method = lambda: 'HEAD'
-
-        try:
-            head = ul.urlopen(req)
-        except ul.HTTPError:
-            print('Scene not reachable at {0:s}'.format(req.get_full_url()))
-            return
-
-        file_size = int(head.headers['Content-Length'])
-
-        first_byte = 0
-        if os.path.exists(self.tmp_scene_path(scene)):
-            first_byte = os.path.getsize(self.tmp_scene_path(scene))
-
-        if self.verbose:
-            print ("Downloading %s, to: %s" % (scene.name, target))
-
-        while first_byte < file_size:
-            # Added try/except to keep the script from crashing if the remote host closes the connection.
-            # Instead, it moves on to the next file.
-            try:
-                first_byte = self._download_bytes(first_byte, scene)
-                time.sleep(random.randint(5, 30))
-            except Exception as e:
-                print(str(e))
-                break
-
-        if first_byte >= file_size:
-            os.rename(self.tmp_scene_path(scene), self.scene_path(scene))
-        return self.scene_path(scene)
-
-    def _compare_checksum(self, filepath, checksum_path):
-        remote_md5hash = open(checksum_path, 'r').read().split()[0].strip()
-        local_md5hash = hashlib.md5(open(filepath, 'rb').read()).hexdigest()
-        if local_md5hash != remote_md5hash:
-            if self.verbose:
-                print('Remote: %s Local: %s' % (remote_md5hash, local_md5hash))
-            print('WARNING: Failed checksum verification: %s' % os.path.basename(filepath))
-        else:
-            if self.verbose:
-                print('Checksum %s matches' % local_md5hash)
+            scene = scene.checksum()
+            self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
 
 
 def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
@@ -219,7 +216,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
     if not host:
         host = 'https://espa.cr.usgs.gov'
 
-    storage = LocalStorage(target_directory, verbose=verbose)
+    storage = LocalStorage(target_directory)
 
     with Api(username, password, host) as api:
         if order == 'ALL':
