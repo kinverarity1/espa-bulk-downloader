@@ -31,8 +31,9 @@ setup(
 
     # Dependent packages (distributions)
     install_requires=[
-    ],
+        'requests',
+        ],
 
     # Supported Python versions
-    python_requires='>=2.7.9',
+    python_requires='>=2.7',
 )
