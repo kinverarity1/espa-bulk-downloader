@@ -359,4 +359,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         LOGGER.error('User killed process')
     except Exception as exc:
-        LOGGER.critical(exc.message, exc_info=os.getenv('DEBUG', False))
+        LOGGER.critical('ERROR: %s' % exc, exc_info=os.getenv('DEBUG', False))
