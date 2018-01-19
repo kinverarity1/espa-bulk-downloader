@@ -28,12 +28,16 @@ import sys
 import time
 import json
 import hashlib
+import logging
 from getpass import getpass
 
 if sys.version_info[0] == 3:
     import urllib.request as ul
 else:
     import urllib2 as ul
+
+LOGGER = logging.getLogger(__name__)
+
 
 
 class Api(object):
@@ -78,8 +82,7 @@ class Api(object):
             if messages.get('errors'):
                 raise Exception('{}'.format(messages.get('errors')))
             if messages.get('warnings'):
-                print('WARNINGS: {}'.format(messages.get('warnings')))
-
+                LOGGER.warning('{}'.format(messages.get('warnings')))
         return resp
 
     def get_completed_scenes(self, orderid):
@@ -132,8 +135,7 @@ class LocalStorage(object):
         path = ''.join([self.basedir, os.sep, scene.orderid, os.sep])
         if not os.path.exists(path):
             os.makedirs(path)
-            if self.verbose:
-                print ("Created target_directory: %s " % path)
+            LOGGER.debug("Created target_directory: %s " % path)
         return path
 
     def scene_path(self, scene):
@@ -147,8 +149,7 @@ class LocalStorage(object):
 
     def store(self, scene, checksum=False):
         if self.is_stored(scene):
-            if self.verbose:
-                print('Scene already exists on disk, skipping.')
+            LOGGER.debug('Scene already exists on disk, skipping.')
             return
 
         download_directory = self.directory_path(scene)
@@ -226,16 +227,15 @@ def main(username, email, order, target_directory, password=None, host=None, ver
         else:
             orders = [order]
 
-        if verbose:
-            print('Retrieving orders: {0}'.format(orders))
+        LOGGER.debug('Retrieving orders: {0}'.format(orders))
 
         for o in orders:
             scenes = api.get_completed_scenes(o)
             if len(scenes) < 1:
-                print('No scenes in "completed" state for order {}'.format(o))
+                LOGGER.warning('No scenes in "completed" state for order {}'.format(o))
 
             for s in range(len(scenes)):
-                print('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
+                LOGGER.info('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
 
                 scene = Scene(scenes[s])
                 storage.store(scene, checksum)
@@ -299,8 +299,11 @@ if __name__ == '__main__':
 
     parsed_args = parser.parse_args()
 
+    log_level = 'DEBUG' if parsed_args.verbose else 'INFO'
+    logging.basicConfig(level=log_level, format='%(asctime)s| %(message)s')
     try:
         main(**vars(parsed_args))
-    except BaseException as error:
-        print('ERROR: {}'.format(str(error)))
-
+    except KeyboardInterrupt:
+        LOGGER.error('User killed process')
+    except Exception as exc:
+        LOGGER.critical(exc.message, exc_info=os.getenv('DEBUG', False))
