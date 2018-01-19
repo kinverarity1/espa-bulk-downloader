@@ -6,10 +6,11 @@ Purpose: A simple python client that will download all available (completed) sce
 
 Requires: Standard Python installation.
 
-Version: 1.0
+Version: 2.2
 
 Changes:
 
+31 Jan 2017: Updated HTTPS support for python >= 2.7.9
 20 June 2017: Woodstonelee added option to download checksum and error handling on bad urls
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
 24 August 2016: Guy Serbin added:

@@ -7,7 +7,7 @@ setup(
     name='download_espa_order',
 
     # Version number:
-    version='2.1.0',
+    version='2.2.0',
 
     # Application author details:
     author='USGS EROS ESPA',
@@ -31,5 +31,8 @@ setup(
 
     # Dependent packages (distributions)
     install_requires=[
-     ],
+    ],
+
+    # Supported Python versions
+    python_requires='>=2.7.9',
 )
