@@ -4,13 +4,13 @@
 Purpose: A simple python client that will download all available (completed) scenes for
          a user order(s).
 
-Requires: Standard Python installation.
+Requires: Standard Python installation. (can also use requests)
 
 Version: 2.2
 
 Changes:
 
-31 Jan 2017: Updated HTTPS support for python >= 2.7.9
+31 Jan 2017: Updated HTTPS support for python 2.7 series (allow using requests library)
 20 June 2017: Woodstonelee added option to download checksum and error handling on bad urls
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
 24 August 2016: Guy Serbin added:
@@ -36,17 +36,22 @@ if sys.version_info[0] == 3:
 else:
     import urllib2 as ul
 
+try:
+    import requests
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+except ImportError:
+    requests = None
+
 LOGGER = logging.getLogger(__name__)
 
-
 class HTTPSHandler(object):
-    """ Re-usable TLS-secured HTTP/REST communications """
+    """ Python standard library TLS-secured HTTP/REST communications """
     def _set_ssl_context(self):
         try:
             from ssl import SSLContext, PROTOCOL_TLSv1_2
         except ImportError:
-            msg = ('Cannot import SSL, HTTPS will not work '
-                   'on Python < 2.7.9') # TODO: Find a workaround
+            msg = ('Cannot import SSL, HTTPS will not work. '
+                   'Try `pip install requests` on Python < 2.7.9')
             raise ImportError(msg)
         else:
             self.context = SSLContext(PROTOCOL_TLSv1_2)
@@ -112,9 +117,57 @@ class HTTPSHandler(object):
         return target_path
 
 
+class RequestsHandler(object):
+    def __init__(self, host=''):
+        self.host = host
+        self.headers = {}
+
+    def auth(self, username, password):
+        basic = ('%s:%s' % (username, password)).encode('ascii')
+        self.headers = {'Authorization': 'Basic %s' % base64.b64encode(basic)}
+
+    def get(self, uri, data=None):
+        response = requests.get(self.host+uri, json=data, headers=self.headers)
+        response.raise_for_status()
+        results = response.json()
+        return results
+
+    def download(self, uri, target_path, verbose=False):
+        fileurl = self.host + uri
+        try:
+            head = requests.head(fileurl)
+        except BaseException:
+            LOGGER.error('Scene not reachable at {0:s}'.format(fileurl))
+            return
+
+        file_size = None
+        if 'Content-Length' in head.headers:
+            file_size = int(head.headers['Content-Length'])
+
+        first_byte, tmp_scene_path = 0, target_path + '.part'
+        if os.path.exists(tmp_scene_path):
+            first_byte = os.path.getsize(tmp_scene_path)
+
+        self.headers.update({'Range': 'bytes=%d-' % first_byte})
+        sock = requests.get(fileurl, headers=self.headers, stream=True)
+
+        f = open(tmp_scene_path, 'ab')
+        bytes_in_mb = 1024*1024
+        for block in sock.iter_content(chunk_size=bytes_in_mb):
+            if block:
+                f.write(block)
+        f.close()
+
+        if os.path.getsize(tmp_scene_path) >= file_size:
+            os.rename(tmp_scene_path, target_path)
+        return target_path
+
 class Api(object):
     def __init__(self, username, password, host):
-        self.handler = HTTPSHandler(host)
+        if requests:
+            self.handler = RequestsHandler(host)
+        else:
+            self.handler = HTTPSHandler(host)
         self.handler.auth(username, password)
 
     def api_request(self, endpoint, data=None):
@@ -183,7 +236,10 @@ class LocalStorage(object):
     def __init__(self, basedir, verbose=False):
         self.basedir = basedir
         self.verbose = verbose
-        self.handler = HTTPSHandler()
+        if requests:
+            self.handler = RequestsHandler()
+        else:
+            self.handler = HTTPSHandler()
 
     def directory_path(self, scene):
         path = os.path.join(self.basedir, scene.orderid)
