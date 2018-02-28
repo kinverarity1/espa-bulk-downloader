@@ -124,7 +124,7 @@ class RequestsHandler(object):
 
     def auth(self, username, password):
         basic = ('%s:%s' % (username, password)).encode('ascii')
-        self.headers = {'Authorization': 'Basic %s' % base64.b64encode(basic)}
+        self.headers = {'Authorization': 'Basic %s' % base64.b64encode(basic).decode()}
 
     def get(self, uri, data=None):
         response = requests.get(self.host+uri, json=data, headers=self.headers)
