@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 
 from setuptools import setup
+from download_espa_order import __version__
 
 setup(
     # Application name:
     name='download_espa_order',
 
     # Version number:
-    version='2.2.0',
+    version=__version__,
 
     # Application author details:
     author='USGS EROS ESPA',
