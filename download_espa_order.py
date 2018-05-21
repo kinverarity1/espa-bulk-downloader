@@ -6,7 +6,7 @@ Purpose: A simple python client that will download all available (completed) sce
 
 Requires: Standard Python installation. (can also use requests)
 
-Version: 2.2.1
+Version: 2.2.2
 
 Changes:
 
@@ -43,7 +43,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.1'
+__version__ = '2.2.2'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
