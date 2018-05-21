@@ -6,7 +6,7 @@ Purpose: A simple python client that will download all available (completed) sce
 
 Requires: Standard Python installation. (can also use requests)
 
-Version: 2.2
+Version: 2.2.2
 
 Changes:
 
@@ -25,6 +25,7 @@ import os
 import random
 import shutil
 import sys
+import platform
 import time
 import json
 import hashlib
@@ -42,7 +43,12 @@ try:
 except ImportError:
     requests = None
 
+__version__ = '2.2.2'
 LOGGER = logging.getLogger(__name__)
+USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
+             .format(v=__version__, s=platform.platform(aliased=True),
+                     p=platform.python_version()))
+
 
 class HTTPSHandler(object):
     """ Python standard library TLS-secured HTTP/REST communications """
@@ -61,6 +67,7 @@ class HTTPSHandler(object):
         self._set_ssl_context()
         self.handler = ul.HTTPSHandler(context=self.context)
         self.opener = ul.build_opener(self.handler)
+        self.opener.addheaders = [('User-Agent', USERAGENT)]
 
     def auth(self, username, password):
         auth_handler = ul.HTTPBasicAuthHandler()
@@ -68,6 +75,7 @@ class HTTPSHandler(object):
                                   uri=self.host, user=username,
                                   passwd=password)
         self.opener = ul.build_opener(auth_handler, self.handler)
+        self.opener.addheaders = [('User-Agent', USERAGENT)]
 
     def get(self, uri, data=None):
         body = (json.dumps(data) if data else '').encode('ascii')
@@ -107,7 +115,7 @@ class HTTPSHandler(object):
             # Instead, it moves on to the next file.
             try:
                 first_byte = self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
-                time.sleep(random.randint(5, 30))
+                time.sleep(random.randint(2, 5))
             except Exception as e:
                 LOGGER.error(str(e))
                 break
@@ -118,16 +126,22 @@ class HTTPSHandler(object):
 
 
 class RequestsHandler(object):
+
     def __init__(self, host=''):
         self.host = host
+        self.creds = None
         self.headers = {}
 
     def auth(self, username, password):
         basic = ('%s:%s' % (username, password)).encode('ascii')
-        self.headers = {'Authorization': 'Basic %s' % base64.b64encode(basic).decode()}
+        self.creds = (username, password)
+        self.headers = {
+                'User-Agent': USERAGENT + ' (Requests/%s)' % requests.__version__
+        }
 
     def get(self, uri, data=None):
-        response = requests.get(self.host+uri, json=data, headers=self.headers)
+        response = requests.get(self.host+uri, json=data,
+                                headers=self.headers, auth=self.creds)
         response.raise_for_status()
         results = response.json()
         return results
@@ -157,6 +171,7 @@ class RequestsHandler(object):
             if block:
                 f.write(block)
         f.close()
+        time.sleep(random.randint(2, 5))
 
         if os.path.getsize(tmp_scene_path) >= file_size:
             os.rename(tmp_scene_path, target_path)
@@ -267,6 +282,8 @@ class LocalStorage(object):
 
 
 def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
+    if not username:
+        raise ValueError('Must supply valid username')
     if not password:
         password = getpass('Password: ')
     if not host:
