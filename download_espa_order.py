@@ -115,7 +115,7 @@ class HTTPSHandler(object):
             # Instead, it moves on to the next file.
             try:
                 first_byte = self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
-                time.sleep(random.randint(5, 30))
+                time.sleep(random.randint(2, 5))
             except Exception as e:
                 LOGGER.error(str(e))
                 break
@@ -171,6 +171,7 @@ class RequestsHandler(object):
             if block:
                 f.write(block)
         f.close()
+        time.sleep(random.randint(2, 5))
 
         if os.path.getsize(tmp_scene_path) >= file_size:
             os.rename(tmp_scene_path, target_path)
