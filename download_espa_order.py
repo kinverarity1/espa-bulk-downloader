@@ -6,8 +6,6 @@ Purpose: A simple python client that will download all available (completed) sce
 
 Requires: Standard Python installation. (can also use requests)
 
-Version: 2.2.2
-
 Changes:
 
 31 Jan 2017: Updated HTTPS support for python 2.7 series (allow using requests library)
@@ -43,7 +41,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.2'
+__version__ = '2.2.3'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
@@ -98,11 +96,7 @@ class HTTPSHandler(object):
         request = ul.Request(self.host + uri)
         request.get_method = lambda: 'HEAD'
 
-        try:
-            head = self.opener.open(request)
-        except ul.HTTPError:
-            LOGGER.error('Scene not reachable at {0:s}'.format(request.get_full_url()))
-            return
+        head = self.opener.open(request)
 
         file_size = int(head.headers['Content-Length'])
 
@@ -111,14 +105,7 @@ class HTTPSHandler(object):
             first_byte = os.path.getsize(tmp_scene_path)
 
         while first_byte < file_size:
-            # Added try/except to keep the script from crashing if the remote host closes the connection.
-            # Instead, it moves on to the next file.
-            try:
-                first_byte = self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
-                time.sleep(random.randint(2, 5))
-            except Exception as e:
-                LOGGER.error(str(e))
-                break
+            first_byte = self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
 
         if first_byte >= file_size:
             os.rename(tmp_scene_path, target_path)
@@ -148,11 +135,8 @@ class RequestsHandler(object):
 
     def download(self, uri, target_path, verbose=False):
         fileurl = self.host + uri
-        try:
-            head = requests.head(fileurl)
-        except BaseException:
-            LOGGER.error('Scene not reachable at {0:s}'.format(fileurl))
-            return
+
+        head = requests.head(fileurl)
 
         file_size = None
         if 'Content-Length' in head.headers:
@@ -171,7 +155,6 @@ class RequestsHandler(object):
             if block:
                 f.write(block)
         f.close()
-        time.sleep(random.randint(2, 5))
 
         if os.path.getsize(tmp_scene_path) >= file_size:
             os.rename(tmp_scene_path, target_path)
@@ -269,19 +252,26 @@ class LocalStorage(object):
     def is_stored(self, scene):
         return os.path.exists(self.scene_path(scene))
 
-    def store(self, scene, checksum=False):
+    def store(self, scene, checksum=False, retry=0):
         if self.is_stored(scene):
             LOGGER.debug('Scene already exists on disk, skipping.')
             return
 
-        LOGGER.debug("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
-        self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
-        if checksum:
-            scene = scene.checksum()
-            self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
+        for tries in range(0, retry+1):
+            LOGGER.debug("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
+            try:
+                self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
+                if checksum:
+                    scene = scene.checksum()
+                    self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
+                return
+            except Exception as exc:
+                LOGGER.error('Scene not reachable at %s (%s)', scene.srcurl, exc)
+                time.sleep(random.randint(2, 30))
 
 
-def main(username, email, order, target_directory, password=None, host=None, verbose=False, checksum=False):
+def main(username, email, order, target_directory, password=None, host=None, verbose=False,
+         checksum=False, retry=0):
     if not username:
         raise ValueError('Must supply valid username')
     if not password:
@@ -308,7 +298,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
                 LOGGER.info('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
 
                 scene = Scene(scenes[s])
-                storage.store(scene, checksum)
+                storage.store(scene, checksum, retry)
 
 
 if __name__ == '__main__':
@@ -366,6 +356,12 @@ if __name__ == '__main__':
                         required=False,
                         action='store_true',
                         help="download additional MD5 checksum files (will warn if binaries do not match)")
+
+    parser.add_argument("-r", '--retry',
+                        required=False,
+                        type=int,
+                        choices=range(1, 11),
+                        help="number of retry attempts for any files which fail to download")
 
     parsed_args = parser.parse_args()
 
