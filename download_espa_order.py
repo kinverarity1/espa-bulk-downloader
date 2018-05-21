@@ -6,8 +6,6 @@ Purpose: A simple python client that will download all available (completed) sce
 
 Requires: Standard Python installation. (can also use requests)
 
-Version: 2.2.2
-
 Changes:
 
 31 Jan 2017: Updated HTTPS support for python 2.7 series (allow using requests library)
@@ -43,7 +41,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.2'
+__version__ = '2.2.3'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
