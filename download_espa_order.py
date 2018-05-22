@@ -41,7 +41,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.3'
+__version__ = '2.2.4'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
@@ -361,6 +361,7 @@ if __name__ == '__main__':
                         required=False,
                         type=int,
                         choices=range(1, 11),
+                        default=0,
                         help="number of retry attempts for any files which fail to download")
 
     parsed_args = parser.parse_args()
