@@ -8,6 +8,7 @@ Requires: Standard Python installation. (can also use requests)
 
 Changes:
 
+23 May 2018: Adam J. Stewart suggestion/adds new CLI options for retries and directory control
 31 Jan 2017: Updated HTTPS support for python 2.7 series (allow using requests library)
 20 June 2017: Woodstonelee added option to download checksum and error handling on bad urls
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
@@ -41,7 +42,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.4'
+__version__ = '2.2.5'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
@@ -231,8 +232,9 @@ class Scene(object):
 
 class LocalStorage(object):
 
-    def __init__(self, basedir, verbose=False):
+    def __init__(self, basedir, no_order_directories=False, verbose=False):
         self.basedir = basedir
+        self.no_order_directories = no_order_directories
         self.verbose = verbose
         if requests:
             self.handler = RequestsHandler()
@@ -240,7 +242,10 @@ class LocalStorage(object):
             self.handler = HTTPSHandler()
 
     def directory_path(self, scene):
-        path = os.path.join(self.basedir, scene.orderid)
+        if self.no_order_directories:
+            path = self.basedir
+        else:
+            path = os.path.join(self.basedir, scene.orderid)
         if not os.path.exists(path):
             os.makedirs(path)
             LOGGER.debug("Created target_directory: %s " % path)
@@ -271,7 +276,7 @@ class LocalStorage(object):
 
 
 def main(username, email, order, target_directory, password=None, host=None, verbose=False,
-         checksum=False, retry=0):
+         checksum=False, retry=0, no_order_directories=False):
     if not username:
         raise ValueError('Must supply valid username')
     if not password:
@@ -279,7 +284,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
     if not host:
         host = 'https://espa.cr.usgs.gov'
 
-    storage = LocalStorage(target_directory)
+    storage = LocalStorage(target_directory, no_order_directories)
 
     with Api(username, password, host) as api:
         if order == 'ALL':
@@ -363,6 +368,12 @@ if __name__ == '__main__':
                         choices=range(1, 11),
                         default=0,
                         help="number of retry attempts for any files which fail to download")
+
+    parser.add_argument('-n', '--no-order-directories',
+                        required=False,
+                        action='store_true',
+                        help='disable generation of order-prefixed directories')
+
 
     parsed_args = parser.parse_args()
 

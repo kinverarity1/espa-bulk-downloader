@@ -48,6 +48,8 @@ Argument | Description
 `-u or --username` | Your ERS username
 `-p or --password` | Your ERS password
 `-c or --checksum` | Download checksum files
+`-r or --retry` | Retry instead of skipping failed files
+`-n or --no-order-directories` | Store all files in one directory
 
 > Linux/Mac Example: `python ./download_espa_order.py -d /some/directory/with/free/space -u your_username`
 
