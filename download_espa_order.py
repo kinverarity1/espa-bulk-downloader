@@ -8,6 +8,7 @@ Requires: Standard Python installation. (can also use requests)
 
 Changes:
 
+23 May 2018: Adam J. Stewart suggestion/adds new CLI options for retries and directory control
 31 Jan 2017: Updated HTTPS support for python 2.7 series (allow using requests library)
 20 June 2017: Woodstonelee added option to download checksum and error handling on bad urls
 30 June 2016: Guy Serbin added support for Python 3.x and download progress indicators.
