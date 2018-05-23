@@ -41,7 +41,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.4'
+__version__ = '2.2.5'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
