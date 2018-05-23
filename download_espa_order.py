@@ -241,7 +241,7 @@ class LocalStorage(object):
             self.handler = HTTPSHandler()
 
     def directory_path(self, scene):
-        if no_order_directories:
+        if self.no_order_directories:
             path = self.basedir
         else:
             path = os.path.join(self.basedir, scene.orderid)
