@@ -20,7 +20,7 @@ This software is preliminary or provisional and is subject to revision. It is be
 * Python Version >= 2.7.9 (required for HTTPS)
 * Note:
   * These were tested with both python 2.7.14 and 3.6.4.
-  * For Python Version >= 2.6.0, the [requests][3] library must be installed.
+  * For Python Version 2.6.x, the [requests][3] library must be installed.
 
 
 ## Install
@@ -50,6 +50,7 @@ Argument | Description
 `-c or --checksum` | Download checksum files
 `-r or --retry` | Retry instead of skipping failed files
 `-n or --no-order-directories` | Store all files in one directory
+`-t or --threads` | Maximum number of parallel downloads
 
 > Linux/Mac Example: `python ./download_espa_order.py -d /some/directory/with/free/space -u your_username`
 

@@ -434,6 +434,7 @@ if __name__ == '__main__':
                         type=int,
                         choices=range(1, 11),
                         default=0,
+                        metavar="INT",
                         help="number of retry attempts for any files which fail to download")
 
     parser.add_argument('-n', '--no-order-directories',
@@ -446,6 +447,7 @@ if __name__ == '__main__':
                         type=int,
                         choices=range(1, 11),
                         default=1,
+                        metavar="INT",
                         help="number of concurrent parallel downloads")
 
     parsed_args = parser.parse_args()
