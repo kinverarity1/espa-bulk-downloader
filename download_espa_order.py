@@ -29,6 +29,7 @@ import time
 import json
 import hashlib
 import logging
+from multiprocessing import Pool, Queue
 from getpass import getpass
 
 if sys.version_info[0] == 3:
@@ -42,7 +43,7 @@ try:
 except ImportError:
     requests = None
 
-__version__ = '2.2.5'
+__version__ = '2.3.0'
 LOGGER = logging.getLogger(__name__)
 USERAGENT = ('EspaBulkDownloader/{v} ({s}) Python/{p}'
              .format(v=__version__, s=platform.platform(aliased=True),
@@ -161,6 +162,44 @@ class RequestsHandler(object):
             os.rename(tmp_scene_path, target_path)
         return target_path
 
+
+class ParallelDownloads(object):
+    def __init__(self, storage, checksum, retry, threads):
+        self.pool = None
+        self.queue = None
+        self.nthreads = threads
+        self.interval = 2
+        self.storage = storage
+        self.checksum = checksum
+        self.retry = retry
+
+    def __enter__(self):
+        self.queue = Queue()
+        self.pool = Pool(self.nthreads, self.download, (self.queue,))
+        return self
+
+    def download(self, queue):
+        try:
+            while True:
+                scene = queue.get(True)
+                self.storage.store(scene, self.checksum, self.retry)
+        except KeyboardInterrupt:
+            LOGGER.error("Caught KeyboardInterrupt, terminating workers")
+        except Exception as exc:
+            LOGGER.error("%s", str(exc))
+
+    def put_scene(self, scene):
+        if self.storage.is_stored(scene):
+            LOGGER.debug('Scene %s already exists on disk, skipping.', scene)
+            return
+        time.sleep(self.interval)
+        self.queue.put(scene)
+
+    def __exit__(self, *exc):
+        self.pool.close()
+        self.pool.join()
+
+
 class Api(object):
     def __init__(self, username, password, host):
         if requests:
@@ -222,6 +261,9 @@ class Scene(object):
         self.filename = parts[-1]
         self.name = self.filename.split('.tar.gz')[0]
 
+    def __repr__(self):
+        return str(self.filename)
+
     @classmethod
     def checksum(cls):
         cls.srcurl = str(cls.srcurl).replace('.tar.gz', '.md5')
@@ -258,12 +300,9 @@ class LocalStorage(object):
         return os.path.exists(self.scene_path(scene))
 
     def store(self, scene, checksum=False, retry=0):
-        if self.is_stored(scene):
-            LOGGER.debug('Scene already exists on disk, skipping.')
-            return
-
+        sys.stdout.flush()
         for tries in range(0, retry+1):
-            LOGGER.debug("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
+            LOGGER.info("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
             try:
                 self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
                 if checksum:
@@ -273,10 +312,11 @@ class LocalStorage(object):
             except Exception as exc:
                 LOGGER.error('Scene not reachable at %s (%s)', scene.srcurl, exc)
                 time.sleep(random.randint(2, 30))
+            sys.stdout.flush()
 
 
 def main(username, email, order, target_directory, password=None, host=None, verbose=False,
-         checksum=False, retry=0, no_order_directories=False):
+         checksum=False, retry=0, no_order_directories=False, threads=1):
     if not username:
         raise ValueError('Must supply valid username')
     if not password:
@@ -292,18 +332,19 @@ def main(username, email, order, target_directory, password=None, host=None, ver
         else:
             orders = [order]
 
+        LOGGER.info('Number of orders: %d', len(orders))
         LOGGER.debug('Retrieving orders: {0}'.format(orders))
 
-        for o in orders:
-            scenes = api.get_completed_scenes(o)
-            if len(scenes) < 1:
-                LOGGER.warning('No scenes in "completed" state for order {}'.format(o))
+        with ParallelDownloads(storage, checksum, retry, threads) as pool:
+            for o in orders:
+                scenes = api.get_completed_scenes(o)
+                if len(scenes) < 1:
+                    LOGGER.warning('No scenes in "completed" state for order {}'.format(o))
+                else:
+                    LOGGER.warning('Number of scenes ready for download: %d', len(scenes))
 
-            for s in range(len(scenes)):
-                LOGGER.info('File {0} of {1} for order: {2}'.format(s + 1, len(scenes), o))
-
-                scene = Scene(scenes[s])
-                storage.store(scene, checksum, retry)
+                for scene in scenes:
+                    pool.put_scene(Scene(scene))
 
 
 if __name__ == '__main__':
@@ -374,6 +415,12 @@ if __name__ == '__main__':
                         action='store_true',
                         help='disable generation of order-prefixed directories')
 
+    parser.add_argument("-t", '--threads',
+                        required=False,
+                        type=int,
+                        choices=range(1, 11),
+                        default=1,
+                        help="number of concurrent parallel downloads")
 
     parsed_args = parser.parse_args()
 
