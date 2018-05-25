@@ -105,12 +105,18 @@ class HTTPSHandler(object):
         first_byte, tmp_scene_path = 0, target_path + '.part'
         if os.path.exists(tmp_scene_path):
             first_byte = os.path.getsize(tmp_scene_path)
+        start = time.time()
 
-        while first_byte < file_size:
-            first_byte = self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
+        self._download_bytes(self.host + uri, first_byte, tmp_scene_path)
 
-        if first_byte >= file_size:
+        if os.path.getsize(tmp_scene_path) >= file_size:
             os.rename(tmp_scene_path, target_path)
+
+        ns = time.time() - start
+        bytes_in_mb = 1024*1024
+        mb = (file_size-first_byte)/float(bytes_in_mb)
+        LOGGER.info("%s [%3.2fmb in %3.2fs, %3.2f MB/s]",
+                    os.path.basename(target_path), mb, ns, mb/ns)
         return target_path
 
 
@@ -147,6 +153,7 @@ class RequestsHandler(object):
         first_byte, tmp_scene_path = 0, target_path + '.part'
         if os.path.exists(tmp_scene_path):
             first_byte = os.path.getsize(tmp_scene_path)
+        start = time.time()
 
         self.headers.update({'Range': 'bytes=%d-' % first_byte})
         sock = requests.get(fileurl, headers=self.headers, stream=True)
@@ -160,6 +167,11 @@ class RequestsHandler(object):
 
         if os.path.getsize(tmp_scene_path) >= file_size:
             os.rename(tmp_scene_path, target_path)
+
+        ns = time.time() - start
+        mb = (file_size-first_byte)/float(bytes_in_mb)
+        LOGGER.info("%s [%3.2fmb in %3.2fs, %3.2f MB/s]",
+                    os.path.basename(target_path), mb, ns, mb/ns)
         return target_path
 
 
@@ -182,9 +194,13 @@ class ParallelDownloads(object):
         try:
             while True:
                 scene = queue.get(True)
+                if scene == None:
+                    queue.put(None)
+                    return
                 self.storage.store(scene, self.checksum, self.retry)
         except KeyboardInterrupt:
             LOGGER.error("Caught KeyboardInterrupt, terminating workers")
+            self.terminate()
         except Exception as exc:
             LOGGER.error("%s", str(exc))
 
@@ -195,9 +211,18 @@ class ParallelDownloads(object):
         time.sleep(self.interval)
         self.queue.put(scene)
 
+    def terminate(self):
+        if self.pool:
+            self.pool.terminate()
+            self.pool.join()
+
+    def close_all(self):
+        self.queue.put(None)
+
     def __exit__(self, *exc):
-        self.pool.close()
-        self.pool.join()
+        if self.pool:
+            self.pool.close()
+            self.pool.join()
 
 
 class Api(object):
@@ -302,7 +327,7 @@ class LocalStorage(object):
     def store(self, scene, checksum=False, retry=0):
         sys.stdout.flush()
         for tries in range(0, retry+1):
-            LOGGER.info("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
+            LOGGER.debug("Downloading %s, to: %s" % (scene.name, self.directory_path(scene)))
             try:
                 self.handler.download(scene.srcurl, self.scene_path(scene), self.verbose)
                 if checksum:
@@ -345,6 +370,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
 
                 for scene in scenes:
                     pool.put_scene(Scene(scene))
+            pool.close_all()
 
 
 if __name__ == '__main__':
@@ -428,7 +454,10 @@ if __name__ == '__main__':
     logging.basicConfig(level=log_level, format='%(asctime)s| %(message)s')
     try:
         main(**vars(parsed_args))
+        sys.exit(0)
     except KeyboardInterrupt:
         LOGGER.error('User killed process')
     except Exception as exc:
         LOGGER.critical('ERROR: %s' % exc, exc_info=os.getenv('DEBUG', False))
+    sys.exit(1)
+
