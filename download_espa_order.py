@@ -306,7 +306,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
                 storage.store(scene, checksum, retry)
 
 
-if __name__ == '__main__':
+def main():
     epilog = ('ESPA Bulk Download Client Version 1.0.0. [Tested with Python 2.7]\n'
               'Retrieves all completed scenes for the user/order\n'
               'and places them into the target directory.\n'
@@ -385,3 +385,7 @@ if __name__ == '__main__':
         LOGGER.error('User killed process')
     except Exception as exc:
         LOGGER.critical('ERROR: %s' % exc, exc_info=os.getenv('DEBUG', False))
+
+
+if __name__ == '__main__':
+    main()
