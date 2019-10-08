@@ -306,7 +306,7 @@ def main(username, email, order, target_directory, password=None, host=None, ver
                 storage.store(scene, checksum, retry)
 
 
-def main():
+def main_entrypoint():
     epilog = ('ESPA Bulk Download Client Version 1.0.0. [Tested with Python 2.7]\n'
               'Retrieves all completed scenes for the user/order\n'
               'and places them into the target directory.\n'

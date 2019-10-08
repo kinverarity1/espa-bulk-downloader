@@ -31,7 +31,7 @@ setup(
     scripts=['download_espa_order.py'],
     entry_points={
         'console_scripts': [
-            'download_espa_order = download_espa_order:main'
+            'download_espa_order = download_espa_order:main_entrypoint'
         ]
     },
 
