@@ -29,6 +29,11 @@ setup(
     # Moves the script to the user's bin directory so that it can be executed.
     # Usage is 'download_espa_order.py' not 'python download_espa_order.py'
     scripts=['download_espa_order.py'],
+    entry_points={
+        'console_scripts': [
+            'download_espa_order = download_espa_order:main'
+        ]
+    },
 
     # Dependent packages (distributions)
     install_requires=[
